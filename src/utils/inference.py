@@ -99,7 +99,6 @@ def load_phi3_v(chunk_size: int) -> VLMModel:
         max_model_len=4096,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
-        mm_processor_kwargs={"num_crops": 4},
     )
 
     def build(question: str, images: list):
