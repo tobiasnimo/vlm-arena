@@ -196,6 +196,7 @@ def load_qwen35_vl(chunk_size: int) -> VLMModel:
         max_model_len=8192,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
+        enforce_eager=True,  # workaround for vLLM 0.17.0 CUBLAS crash during vision encoder profiling
     )
     processor = AutoProcessor.from_pretrained(model_name)
 
