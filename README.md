@@ -1,6 +1,6 @@
 # VLM Arena
 
-Evaluate multiple Vision Language Models (VLMs) on video understanding tasks. The pipeline extracts frames from videos, runs them through several VLMs in parallel, and uses an LLM-as-a-judge to score each model's descriptions against ground-truth annotations.
+Evaluate multiple Vision Language Models (VLMs) on video understanding tasks. The pipeline extracts frames from videos, runs them through several VLMs, and uses an LLM-as-a-judge to score each model's descriptions against per-event ground-truth annotations.
 
 ---
 
@@ -10,13 +10,14 @@ Evaluate multiple Vision Language Models (VLMs) on video understanding tasks. Th
 videos/<name>/
 ├── video.mp4          # input video
 ├── prompt.txt         # question to ask the VLMs  (optional — falls back to "Describe this scene.")
-└── annotations.txt    # ground-truth event notes   (optional — skips judge if missing)
+└── annotations.json   # list of annotated events with timeframes  (optional — skips judge if missing)
 ```
 
 1. **Frame extraction** — splits each video into JPG frames at the configured FPS
-2. **Chunked inference** — groups frames into chunks of 5 and runs each VLM on every chunk
-3. **Judge** — aggregates all per-chunk answers into a chronological narrative, then asks a Groq-hosted LLM to score each model against the annotations
-4. **Results** — saved to `results/` as JSON
+2. **Chunked inference** — groups frames into overlapping chunks and runs each VLM on every chunk → one **Story** per chunk
+3. **Per-event judging** — for each annotated event, the judge collects all stories whose timeframe overlaps the event's timeframe and asks a Groq-hosted LLM to score them → one **Judgement** per event
+4. **Results** — one JSON file per video-model pair, saved to `results/<model_key>/<video_id>.json`
+5. **Leaderboard** — aggregated average scores across all videos and events, saved to `results/leaderboard.json`
 
 ---
 
@@ -26,10 +27,11 @@ videos/<name>/
 src/
 ├── arena.py              # entry point — orchestrates the full pipeline
 ├── config.py             # settings loaded from config.txt
+├── schemas.py            # Pydantic models: Timeframe, Event, Story, Judgement, VideoResult
 └── utils/
-    ├── inference.py      # vLLM model loaders and inference runner
-    ├── judge.py          # LLM-as-a-judge via Groq
-    └── preprocessing.py  # frame extraction via OpenCV
+    ├── inference.py      # VLMModel class, model loaders, MockVLMModel
+    ├── judge.py          # LLM-as-a-judge via Groq (per-event)
+    └── preprocessing.py  # frame extraction, timestamp parsing, chunking
 videos/                   # place your video folders here
 results/                  # output JSON files (created automatically)
 config.txt                # configuration (see below)
@@ -60,19 +62,16 @@ pip install -r requirements.txt
 
 ### 3. Configure
 
-Create `config.txt` in the project root:
+Create `config.txt` in the project root (see `example.env` for all options):
 
 ```ini
-# Hugging Face token (required for gated models like Phi-3.5)
 HF_TOKEN=hf_your_token_here
-
-# Groq API key (required for the judge)
 GROQ_API_KEY=gsk_your_key_here
 
-# Frames per second to extract from each video
 FPS=1
+CHUNK_SIZE=5
+CHUNK_OVERLAP=0
 
-# VLM model keys to run (space-separated)
 MODELS=["phi3_v", "qwen2_vl"]
 ```
 
@@ -85,7 +84,7 @@ cd src
 python arena.py
 ```
 
-The script discovers all `*.mp4` files under `videos/`, processes each one, and writes results to `results/`.
+The script discovers all `*.mp4` files under `videos/`, loads all configured models once, processes every video × model pair, and writes results to `results/`.
 
 ---
 
@@ -97,37 +96,85 @@ Each video lives in its own subdirectory under `videos/`:
 videos/
 └── my_video/
     ├── video.mp4
-    ├── prompt.txt        # e.g. "What actions are performed in this scene?"
-    └── annotations.txt   # e.g. "Person picks up object. Places it on table."
+    ├── prompt.txt         # e.g. "What actions are performed in this scene?"
+    └── annotations.json   # list of events with timeframes (see below)
 ```
 
 - If `prompt.txt` is missing, the pipeline falls back to `"Describe this scene."` and logs a warning.
-- If `annotations.txt` is missing, the judge step is skipped and a warning is logged.
+- If `annotations.json` is missing, the judge step is skipped and a warning is logged.
+
+### annotations.json format
+
+A JSON array of event objects. Each event has an `event_id`, a `description`, and a `timeframe` (`"HH:MM:SS"`):
+
+```json
+[
+  {
+    "event_id": "evt_001",
+    "description": "Person enters the room",
+    "timeframe": {
+      "start": "00:00:00",
+      "end": "00:00:08"
+    }
+  },
+  {
+    "event_id": "evt_002",
+    "description": "Person picks up the object from the table",
+    "timeframe": {
+      "start": "00:00:10",
+      "end": "00:00:20"
+    }
+  }
+]
+```
 
 ---
 
 ## Output format
 
-**Per-story inference** (`results/<name>_story000.json`):
+**Per video-model pair** (`results/<model_key>/<video_id>.json`):
+
 ```json
-[
-  {
-    "model": "Phi-3.5-Vision",
-    "model_key": "phi3_v",
-    "question": "What actions are performed in this scene?",
-    "answer": "A person reaches for ...",
-    "elapsed_seconds": 12.4
-  }
-]
+{
+  "video_id": "my_video",
+  "model_key": "phi3_v",
+  "model_label": "Phi-3.5-Vision",
+  "video_duration": "00:01:30",
+  "fps": 1,
+  "chunk_size": 5,
+  "chunk_overlap": 0,
+  "stories": [
+    {
+      "story_id": "story_000",
+      "timeframe": { "start": "00:00:00", "end": "00:00:04" },
+      "question": "What actions are performed in this scene?",
+      "answer": "A person reaches for ...",
+      "frame_count": 5,
+      "elapsed_seconds": 12.4
+    }
+  ],
+  "judgements": [
+    {
+      "event_id": "evt_001",
+      "event_description": "Person enters the room",
+      "event_timeframe": { "start": "00:00:00", "end": "00:00:08" },
+      "story_ids": ["story_000", "story_001"],
+      "score": 0.82,
+      "analysis": "The model correctly identified the entry but missed ..."
+    }
+  ]
+}
 ```
 
-**Judge scores** (`results/<name>_judgment.json`):
+**Leaderboard** (`results/leaderboard.json`):
+
 ```json
 [
   {
-    "model": "Phi-3.5-Vision",
-    "score": 0.82,
-    "analysis": "The model correctly identified the main action but missed ..."
+    "model_label": "Phi-3.5-Vision",
+    "model_key": "phi3_v",
+    "avg_score": 0.78,
+    "n_judgements": 12
   }
 ]
 ```
@@ -136,13 +183,19 @@ videos/
 
 ## Available models
 
-| Key              | Model                    | VRAM  |
-|------------------|--------------------------|-------|
+| Key              | Model                    | VRAM   |
+|------------------|--------------------------|--------|
 | `phi3_v`         | Phi-3.5-vision-instruct  | ~10 GB |
 | `qwen2_vl`       | Qwen2-VL-7B-Instruct     | ~18 GB |
 | `llava_next`     | LLaVA-v1.6-Mistral-7B   | ~16 GB |
 | `internvl2`      | InternVL2-8B             | ~18 GB |
 | `deepseek_vl2`   | DeepSeek-VL2-Tiny        | ~8 GB  |
+
+---
+
+## Testing without a GPU
+
+Set `MOCK_INFERENCE=true` in `config.txt`. Models will not be loaded; a placeholder answer is returned for every chunk so the full pipeline (chunking, judging, output writing) can be exercised locally.
 
 ---
 
