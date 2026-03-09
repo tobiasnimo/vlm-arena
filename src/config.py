@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
 os.environ["HF_TOKEN"] = settings.hf_token
 os.environ["GROQ_API_KEY"] = settings.groq_api_key
 os.environ["HF_HUB_DISABLE_XET"] = "1"  # disable xet transfer protocol (unstable on some instances)

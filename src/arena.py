@@ -166,7 +166,7 @@ def process_video(video_path: Path, model, events: list[Event], prompt: str) -> 
 
 def main():
     if not MODELS:
-        logger.error("No models configured. Set MODELS in config.txt.")
+        logger.error("No models configured. Set MODELS in .env file.")
         sys.exit(1)
 
     if CHUNK_OVERLAP >= CHUNK_SIZE:
