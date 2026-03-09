@@ -62,7 +62,7 @@ pip install -r requirements.txt
 
 ### 3. Configure
 
-Create `config.txt` in the project root (see `example.env` for all options):
+Create `.env` in the project root (see `example.env` for all options):
 
 ```ini
 HF_TOKEN=hf_your_token_here
