@@ -27,8 +27,13 @@ class Settings(BaseSettings):
     # Set to True to skip GPU model loading and return placeholder answers
     mock_inference: bool = False
 
+    # Override HuggingFace cache location (useful when root volume is small, e.g. SageMaker)
+    hf_home: str = ""
+
 
 settings = Settings()
 os.environ["HF_TOKEN"] = settings.hf_token
 os.environ["GROQ_API_KEY"] = settings.groq_api_key
 os.environ["HF_HUB_DISABLE_XET"] = "1"  # disable xet transfer protocol (unstable on some instances)
+if settings.hf_home:
+    os.environ["HF_HOME"] = settings.hf_home
