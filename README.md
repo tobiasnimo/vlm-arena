@@ -192,6 +192,47 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 | `internvl2`      | InternVL2-8B             | ~18 GB |
 | `deepseek_vl2`   | DeepSeek-VL2-Tiny        | ~8 GB  |
 
+### Adding a new model
+
+1. **Write a loader** in `src/utils/inference.py`. The loader must accept `chunk_size: int`, create a vLLM `LLM` instance, define a `build(question, images) → (prompt, image_data, stop_token_ids)` function, and return a `VLMModel`:
+
+```python
+def load_my_model(chunk_size: int) -> VLMModel:
+    from vllm import LLM
+
+    llm = LLM(
+        model="org/my-model",
+        trust_remote_code=True,   # if required
+        max_model_len=4096,
+        max_num_seqs=2,
+        limit_mm_per_prompt={"image": chunk_size},
+    )
+
+    def build(question: str, images: list):
+        # format prompt with image placeholders for this model's chat template
+        prompt = f"<|user|>\n<image>\n{question}<|end|>\n<|assistant|>\n"
+        return prompt, images, None  # (prompt, image_data, stop_token_ids)
+
+    return VLMModel(key="my_model", label="My Model Name", llm=llm, build_fn=build)
+```
+
+2. **Register it** by adding an entry to `MODEL_REGISTRY` in the same file:
+
+```python
+MODEL_REGISTRY: dict[str, dict] = {
+    ...
+    "my_model": {"loader": load_my_model, "label": "My Model Name"},
+}
+```
+
+3. **Enable it** by adding the key to `MODELS` in your `.env`:
+
+```ini
+MODELS=["my_model"]
+```
+
+The prompt format varies by model family — check the model card or vLLM's [supported models](https://docs.vllm.ai/en/stable/models/supported_models/) page for the correct image tokens and chat template.
+
 ---
 
 ## Testing without a GPU
