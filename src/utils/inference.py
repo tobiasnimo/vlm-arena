@@ -99,6 +99,7 @@ def load_phi3_v(chunk_size: int) -> VLMModel:
         max_model_len=4096,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
+        enforce_eager=True,  # workaround for vLLM 0.17.0 CUBLAS crash during vision encoder profiling
     )
 
     def build(question: str, images: list):
