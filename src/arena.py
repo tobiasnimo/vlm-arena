@@ -1,129 +1,253 @@
+"""
+VLM Arena — main orchestration script.
+
+Pipeline:
+  1. Load all requested VLMs into memory (once).
+  2. For each video:
+       a. Extract frames at the configured FPS.
+       b. Split frames into overlapping chunks.
+       c. Load prompt and events from the video folder.
+       d. For each loaded model:
+            - Run inference on every chunk → Story list.
+            - For each annotated event, judge against overlapping stories → Judgement list.
+            - Save VideoResult to results/<model_key>/<video_id>.json.
+  3. Aggregate scores across all results and write results/leaderboard.json.
+"""
+
 import json
 import logging
+import sys
 from pathlib import Path
 
 from tqdm import tqdm
 
-from utils.inference import run_comparison, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
-from utils.preprocessing import extract_frames
-from utils.judge import judge_descriptions
 from config import settings
+from schemas import Event, Story, Timeframe, VideoResult
+from utils.inference import load_model, load_images, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
+from utils.judge import judge_event
+from utils.preprocessing import extract_frames, parse_frame_timestamp, make_chunks
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    stream=sys.stdout,
+)
 logger = logging.getLogger(__name__)
 
-# --- Config ---
+# ── Config ────────────────────────────────────────────────────────────────────
 
 FPS = settings.fps
+CHUNK_SIZE = settings.chunk_size
+CHUNK_OVERLAP = settings.chunk_overlap
 MODELS = settings.models
+MOCK = settings.mock_inference
 
-# --- Evaluation pipeline ---
+RESULTS_DIR = Path(__file__).parent.parent / "results"
+VIDEOS_DIR = Path(__file__).parent.parent / "videos"
 
-def evaluate_vlms(video_path: Path) -> list[dict]:
+DEFAULT_PROMPT = "Describe this scene."
 
-    # --- Paths ---
-    frames_path = video_path.parent / "frames"
-    prompt_path = video_path.parent / "prompt.txt"
-    annotations_path = video_path.parent / "annotations.txt"
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-    # --- Video pre-processing ---
-    if frames_path.exists() and any(frames_path.iterdir()):
-        frames = sorted(str(p) for p in frames_path.glob("*.jpg"))
-    else:
-        frames = extract_frames(video_path, frames_path, FPS)
+def load_events(video_dir: Path) -> list[Event]:
+    """Parse annotations.json into a list of Event objects."""
+    annotations_path = video_dir / "annotations.json"
+    if not annotations_path.exists():
+        return []
+    with open(annotations_path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    return [Event.model_validate(e) for e in raw]
 
-    def chunk_list(lst, m):
-        return [lst[i:i+m] for i in range(0, len(lst), m)]
 
-    stories = chunk_list(frames, 5)
-
-    # --- VLM inference ---
-    DEFAULT_PROMPT = "Describe this scene."
-
+def load_prompt(video_dir: Path) -> str:
+    prompt_path = video_dir / "prompt.txt"
     if prompt_path.exists():
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            prompt = f.read()
+        return prompt_path.read_text(encoding="utf-8").strip()
+    logger.warning("prompt.txt not found in %s — using default prompt", video_dir)
+    return DEFAULT_PROMPT
+
+
+def seconds_to_hms(total_seconds: float) -> str:
+    h = int(total_seconds // 3600)
+    m = int((total_seconds % 3600) // 60)
+    s = int(total_seconds % 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+# ── Per-video, per-model processing ──────────────────────────────────────────
+
+def process_video(video_path: Path, model, events: list[Event], prompt: str) -> VideoResult:
+    """Run inference + judging for one video × one model pair."""
+    video_dir = video_path.parent
+    video_id = video_dir.name
+
+    # Frame extraction (reuse if already extracted)
+    frames_dir = video_dir / "frames"
+    if frames_dir.exists() and any(frames_dir.iterdir()):
+        frames = sorted(str(p) for p in frames_dir.glob("*.jpg"))
+        logger.info("Reusing %d cached frames from %s", len(frames), frames_dir)
     else:
-        prompt = DEFAULT_PROMPT
-        logger.warning("prompt.txt not found for %s — using default prompt: %r", video_path.parent, DEFAULT_PROMPT)
+        frames = extract_frames(video_path, frames_dir, FPS)
 
-    Path("results").mkdir(exist_ok=True)
+    if not frames:
+        logger.warning("No frames extracted for %s — skipping", video_id)
+        return VideoResult(
+            video_id=video_id,
+            model_key=model.key,
+            model_label=model.label,
+            video_duration="00:00:00",
+            fps=FPS,
+            chunk_size=CHUNK_SIZE,
+            chunk_overlap=CHUNK_OVERLAP,
+            stories=[],
+            judgements=[],
+        )
 
-    # Collect results from every story so the judge sees the full video
-    all_story_results = []
-    for i, story in enumerate(stories):
-        RESULTS_PATH = Path("results") / f"{video_path.parent.name}_story{i:03d}.json"
+    video_duration = parse_frame_timestamp(frames[-1])
+    chunks = make_chunks(frames, CHUNK_SIZE, CHUNK_OVERLAP)
 
-        story_results = run_comparison(
-                model_keys=MODELS,
+    # ── VLM inference ─────────────────────────────────────────────────────────
+    stories: list[Story] = []
+
+    for i, chunk_paths in enumerate(chunks):
+        story_id = f"story_{i:03d}"
+        images = load_images(chunk_paths)
+
+        try:
+            answer, elapsed = model.run(
                 question=prompt,
-                images=story,
+                images=images,
                 max_tokens=DEFAULT_MAX_TOKENS,
                 temperature=DEFAULT_TEMPERATURE,
-                output_file=RESULTS_PATH,
+            )
+        except Exception as exc:
+            logger.error("[%s] inference failed on chunk %d: %s", model.label, i, exc)
+            answer = f"[ERROR] {exc}"
+            elapsed = 0.0
+
+        story = Story(
+            story_id=story_id,
+            timeframe=Timeframe(
+                start=parse_frame_timestamp(chunk_paths[0]),
+                end=parse_frame_timestamp(chunk_paths[-1]),
+            ),
+            question=prompt,
+            answer=answer,
+            frame_count=len(chunk_paths),
+            elapsed_seconds=elapsed,
         )
-        all_story_results.append(story_results)
+        stories.append(story)
+        logger.info("[%s] %s | %s–%s | %.2fs", model.label, story_id,
+                    story.timeframe.start, story.timeframe.end, elapsed)
 
-    # --- Judge ---
-    if not annotations_path.exists():
-        logger.warning("annotations.txt not found for %s — skipping judge", video_path.parent)
-        return []
+    # ── Judging ───────────────────────────────────────────────────────────────
+    judgements = []
+    if not events:
+        logger.warning("No annotations.json for %s — skipping judge", video_id)
+    else:
+        for event in events:
+            judgement = judge_event(event=event, stories=stories)
+            judgements.append(judgement)
 
-    with open(annotations_path, "r", encoding="utf-8") as f:
-        annotations = f.read()
+    return VideoResult(
+        video_id=video_id,
+        model_key=model.key,
+        model_label=model.label,
+        video_duration=video_duration,
+        fps=FPS,
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        stories=stories,
+        judgements=judgements,
+    )
 
-    # Aggregate all per-story answers by model (chronological order)
-    model_descriptions: dict[str, list[str]] = {}
-    for story_results in all_story_results:
-        for result in story_results:
-            if "error" in result:
-                continue
-            model_descriptions.setdefault(result["model"], []).append(result["answer"])
 
-    # Combine all story descriptions into a single chronological narrative and pass it to the judge
-    judgments = []
-    for model_label, story_descriptions in model_descriptions.items():
-        descriptions = "\n\n".join(
-            f"[Chunk {i + 1}] {desc}" for i, desc in enumerate(story_descriptions)
-        )
-        judgment = judge_descriptions(annotations=annotations, descriptions=descriptions)
-        judgment["model"] = model_label
-        logger.info("[%s] Score: %s — %s", model_label, judgment["score"], judgment["analysis"])
-        judgments.append(judgment)
+# ── Main ──────────────────────────────────────────────────────────────────────
 
-    JUDGE_PATH = Path("results") / f"{video_path.parent.name}_judgment.json"
-    with open(JUDGE_PATH, "w") as f:
-        json.dump(judgments, f, indent=2)
+def main():
+    if not MODELS:
+        logger.error("No models configured. Set MODELS in config.txt.")
+        sys.exit(1)
 
-    return judgments
+    if CHUNK_OVERLAP >= CHUNK_SIZE:
+        logger.error("CHUNK_OVERLAP (%d) must be less than CHUNK_SIZE (%d).", CHUNK_OVERLAP, CHUNK_SIZE)
+        sys.exit(1)
 
-# --- Run ---
+    videos = list(VIDEOS_DIR.glob("**/*.mp4"))
+    if not videos:
+        logger.warning("No .mp4 files found under %s", VIDEOS_DIR)
+        sys.exit(0)
 
-VIDEOS_DIR = Path(__file__).parent.parent / "videos"
-videos = list(VIDEOS_DIR.glob("**/*.mp4"))
+    logger.info("Found %d video(s). Loading %d model(s)%s…",
+                len(videos), len(MODELS), " [MOCK]" if MOCK else "")
 
-all_judgments: list[dict] = []
-for video in tqdm(videos, desc="Running VLM Arena"):
-    logger.info("Processing: %s", video)
-    all_judgments.extend(evaluate_vlms(video))
+    # Load all models once before iterating videos
+    loaded_models = []
+    for key in MODELS:
+        try:
+            loaded_models.append(load_model(key, chunk_size=CHUNK_SIZE, mock=MOCK))
+        except Exception as exc:
+            logger.error("Failed to load model '%s': %s", key, exc)
 
-# --- Leaderboard ---
-scores_by_model: dict[str, list[float]] = {}
-for j in all_judgments:
-    if j["score"] is not None:
-        scores_by_model.setdefault(j["model"], []).append(j["score"])
+    if not loaded_models:
+        logger.error("No models could be loaded. Exiting.")
+        sys.exit(1)
 
-leaderboard = sorted(
-    [
-        {"model": model, "avg_score": round(sum(scores) / len(scores), 4), "n_videos": len(scores)}
-        for model, scores in scores_by_model.items()
-    ],
-    key=lambda x: x["avg_score"],
-    reverse=True,
-)
+    # Process every video × model pair
+    all_results: list[VideoResult] = []
 
-for entry in leaderboard:
-    logger.info("%-30s avg score: %.4f  (n=%d)", entry["model"], entry["avg_score"], entry["n_videos"])
+    for video_path in tqdm(videos, desc="Videos"):
+        video_dir = video_path.parent
+        events = load_events(video_dir)
+        prompt = load_prompt(video_dir)
 
-Path("results").mkdir(exist_ok=True)
-with open(Path("results") / "leaderboard.json", "w") as f:
-    json.dump(leaderboard, f, indent=2)
+        if not events:
+            logger.warning("No events found for %s — judging will be skipped", video_dir.name)
+
+        for model in loaded_models:
+            logger.info("── %s × %s ──", video_dir.name, model.label)
+            result = process_video(video_path, model, events, prompt)
+
+            # Save result: results/<model_key>/<video_id>.json
+            out_dir = RESULTS_DIR / model.key
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / f"{video_dir.name}.json"
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(result.model_dump_json(indent=2))
+            logger.info("Saved → %s", out_path)
+
+            all_results.append(result)
+
+    # ── Leaderboard ───────────────────────────────────────────────────────────
+    scores_by_model: dict[str, list[float]] = {}
+    for result in all_results:
+        for j in result.judgements:
+            if j.score is not None:
+                scores_by_model.setdefault(result.model_label, []).append(j.score)
+
+    leaderboard = sorted(
+        [
+            {
+                "model_label": label,
+                "model_key": next(r.model_key for r in all_results if r.model_label == label),
+                "avg_score": round(sum(scores) / len(scores), 4),
+                "n_judgements": len(scores),
+            }
+            for label, scores in scores_by_model.items()
+        ],
+        key=lambda x: x["avg_score"],
+        reverse=True,
+    )
+
+    for entry in leaderboard:
+        logger.info("%-30s avg score: %.4f  (n=%d)",
+                    entry["model_label"], entry["avg_score"], entry["n_judgements"])
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(RESULTS_DIR / "leaderboard.json", "w", encoding="utf-8") as f:
+        json.dump(leaderboard, f, indent=2)
+    logger.info("Leaderboard saved → %s", RESULTS_DIR / "leaderboard.json")
+
+
+if __name__ == "__main__":
+    main()

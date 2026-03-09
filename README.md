@@ -52,8 +52,8 @@ VLMs require a GPU. Recommended SageMaker instances:
 ### 2. Install dependencies
 
 ```bash
-python3 -m venv vllm-env
-source vllm-env/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```

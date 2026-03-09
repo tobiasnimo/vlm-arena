@@ -1,72 +1,119 @@
 """
-VLM Multi-Model Inference Script for SageMaker
-================================================
-Supports: Phi-3.5-vision, Qwen2-VL, LLaVA-1.6, InternVL2, DeepSeek-VL2
-Usage:
-    python vlm_inference.py --model phi3_v --images img1.jpg img2.jpg --question "What do you see?"
-    python vlm_inference.py --model qwen2_vl --images img1.jpg --question "Describe this image"
-    python vlm_inference.py --compare --images img1.jpg --question "What is this?"
+VLM inference — load-once, run-many design.
+
+Each loader returns a VLMModel instance.  The model is loaded into GPU memory
+once and reused for every chunk of every video, keeping VRAM allocation stable.
+
+MockVLMModel skips GPU loading entirely and is used when MOCK_INFERENCE=true.
 """
 
-import argparse
 import logging
 import time
-import json
-import os
-from typing import NamedTuple, Optional
+from typing import Callable, Optional
+
+import PIL.Image
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-import PIL.Image
-from transformers import AutoProcessor, AutoTokenizer
-from vllm import LLM, SamplingParams
-from vllm.multimodal.utils import fetch_image
-
-
-# ── Shared defaults ──────────────────────────────────────────────────────────
-
-DEFAULT_QUESTION = "What is the content of each image?"
 DEFAULT_MAX_TOKENS = 512
 DEFAULT_TEMPERATURE = 0.2
 
 
-# ── Data container ────────────────────────────────────────────────────────────
+# ── VLM model interface ───────────────────────────────────────────────────────
 
-class ModelRequestData(NamedTuple):
-    llm: LLM
-    prompt: str
-    image_data: list
-    stop_token_ids: Optional[list] = None
-    chat_template: Optional[str] = None
+class VLMModel:
+    """Wraps a loaded vLLM instance with a model-specific prompt builder."""
+
+    def __init__(self, key: str, label: str, llm, build_fn: Callable):
+        """
+        Args:
+            llm:      Loaded vLLM LLM instance.
+            build_fn: Callable(question, images) → (prompt, image_data, stop_token_ids)
+        """
+        self.key = key
+        self.label = label
+        self._llm = llm
+        self._build_fn = build_fn
+
+    def run(
+        self,
+        question: str,
+        images: list,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        temperature: float = DEFAULT_TEMPERATURE,
+    ) -> tuple[str, float]:
+        """Run inference on a list of PIL images. Returns (answer, elapsed_seconds)."""
+        from vllm import SamplingParams
+
+        t0 = time.time()
+        prompt, image_data, stop_token_ids = self._build_fn(question, images)
+
+        sampling_params = SamplingParams(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stop_token_ids=stop_token_ids or [],
+        )
+
+        outputs = self._llm.generate(
+            {"prompt": prompt, "multi_modal_data": {"image": image_data}},
+            sampling_params,
+        )
+
+        elapsed = round(time.time() - t0, 2)
+        answer = outputs[0].outputs[0].text.strip()
+        logger.info("%s answered in %.1fs", self.label, elapsed)
+        return answer, elapsed
+
+
+class MockVLMModel:
+    """Fake VLM that returns placeholder text — no GPU required."""
+
+    def __init__(self, key: str, label: str):
+        self.key = key
+        self.label = label
+
+    def run(
+        self,
+        question: str,
+        images: list,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        temperature: float = DEFAULT_TEMPERATURE,
+    ) -> tuple[str, float]:
+        answer = (
+            f"[MOCK:{self.label}] Processed {len(images)} frame(s). "
+            f"Question: '{question}'. Placeholder description of observed scene activity."
+        )
+        logger.info("[MOCK] %s returned placeholder answer for %d frame(s)", self.label, len(images))
+        return answer, 0.05
 
 
 # ── Model loaders ─────────────────────────────────────────────────────────────
 
-def load_phi3_v(question: str, images: list) -> ModelRequestData:
-    """Microsoft Phi-3.5-vision-instruct — strong general-purpose VLM."""
+def load_phi3_v(chunk_size: int) -> VLMModel:
+    from vllm import LLM
+
     llm = LLM(
         model="microsoft/Phi-3.5-vision-instruct",
         trust_remote_code=True,
         max_model_len=4096,
         max_num_seqs=2,
-        limit_mm_per_prompt={"image": len(images)},
+        limit_mm_per_prompt={"image": chunk_size},
         mm_processor_kwargs={"num_crops": 4},
     )
-    # Phi-3.5 uses numbered image tags: <|image_1|>, <|image_2|>, ...
-    placeholders = "\n".join(
-        f"<|image_{i}|>" for i in range(1, len(images) + 1)
-    )
-    prompt = f"<|user|>\n{placeholders}\n{question}<|end|>\n<|assistant|>\n"
-    return ModelRequestData(
-        llm=llm,
-        prompt=prompt,
-        image_data=images,
-    )
+
+    def build(question: str, images: list):
+        placeholders = "\n".join(f"<|image_{i}|>" for i in range(1, len(images) + 1))
+        prompt = f"<|user|>\n{placeholders}\n{question}<|end|>\n<|assistant|>\n"
+        return prompt, images, None
+
+    return VLMModel(key="phi3_v", label="Phi-3.5-Vision", llm=llm, build_fn=build)
 
 
-def load_qwen2_vl(question: str, images: list) -> ModelRequestData:
-    """Qwen2-VL-7B-Instruct — excellent at fine-grained visual understanding."""
+def load_qwen2_vl(chunk_size: int) -> VLMModel:
+    from vllm import LLM
+    from transformers import AutoProcessor
+
     try:
         from qwen_vl_utils import process_vision_info
     except ImportError:
@@ -77,289 +124,117 @@ def load_qwen2_vl(question: str, images: list) -> ModelRequestData:
         model=model_name,
         max_model_len=8192,
         max_num_seqs=2,
-        limit_mm_per_prompt={"image": len(images)},
+        limit_mm_per_prompt={"image": chunk_size},
     )
-
-    placeholders = [{"type": "image", "image": img} for img in images]
-    messages = [{
-        "role": "user",
-        "content": [*placeholders, {"type": "text", "text": question}],
-    }]
-
     processor = AutoProcessor.from_pretrained(model_name)
-    prompt = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    image_data, _ = process_vision_info(messages)
 
-    return ModelRequestData(
-        llm=llm,
-        prompt=prompt,
-        image_data=image_data,
-    )
+    def build(question: str, images: list):
+        placeholders = [{"type": "image", "image": img} for img in images]
+        messages = [{"role": "user", "content": [*placeholders, {"type": "text", "text": question}]}]
+        prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        image_data, _ = process_vision_info(messages)
+        return prompt, image_data, None
+
+    return VLMModel(key="qwen2_vl", label="Qwen2-VL-7B", llm=llm, build_fn=build)
 
 
-def load_llava_next(question: str, images: list) -> ModelRequestData:
-    """LLaVA-v1.6-Mistral-7B — widely used open-source baseline."""
+def load_llava_next(chunk_size: int) -> VLMModel:
+    from vllm import LLM
+
     model_name = "llava-hf/llava-v1.6-mistral-7b-hf"
     llm = LLM(
         model=model_name,
         max_model_len=8192,
         max_num_seqs=2,
-        limit_mm_per_prompt={"image": len(images)},
+        limit_mm_per_prompt={"image": chunk_size},
     )
 
-    # LLaVA uses a single <image> token per image
-    image_tokens = "\n".join("<image>" for _ in images)
-    prompt = f"[INST] {image_tokens}\n{question} [/INST]"
+    def build(question: str, images: list):
+        image_tokens = "\n".join("<image>" for _ in images)
+        prompt = f"[INST] {image_tokens}\n{question} [/INST]"
+        return prompt, images, None
 
-    return ModelRequestData(
-        llm=llm,
-        prompt=prompt,
-        image_data=images,
-    )
+    return VLMModel(key="llava_next", label="LLaVA-v1.6-Mistral", llm=llm, build_fn=build)
 
 
-def load_internvl2(question: str, images: list) -> ModelRequestData:
-    """InternVL2-8B — strong multilingual and document understanding VLM."""
+def load_internvl2(chunk_size: int) -> VLMModel:
+    from vllm import LLM
+    from transformers import AutoTokenizer
+
     model_name = "OpenGVLab/InternVL2-8B"
     llm = LLM(
         model=model_name,
         trust_remote_code=True,
         max_model_len=4096,
         max_num_seqs=2,
-        limit_mm_per_prompt={"image": len(images)},
+        limit_mm_per_prompt={"image": chunk_size},
     )
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name, trust_remote_code=True
-    )
-    # InternVL2 uses <image> tokens with a special chat format
-    image_tokens = "\n".join(
-        f"Image-{i}: <image>" for i in range(1, len(images) + 1)
-    )
-    messages = [{"role": "user", "content": f"{image_tokens}\n{question}"}]
-    prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
+    def build(question: str, images: list):
+        image_tokens = "\n".join(f"Image-{i}: <image>" for i in range(1, len(images) + 1))
+        messages = [{"role": "user", "content": f"{image_tokens}\n{question}"}]
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        return prompt, images, [tokenizer.eos_token_id]
 
-    return ModelRequestData(
-        llm=llm,
-        prompt=prompt,
-        image_data=images,
-        stop_token_ids=[tokenizer.eos_token_id],
-    )
+    return VLMModel(key="internvl2", label="InternVL2-8B", llm=llm, build_fn=build)
 
 
-def load_deepseek_vl2(question: str, images: list) -> ModelRequestData:
-    """DeepSeek-VL2-Tiny — efficient DeepSeek vision model."""
+def load_deepseek_vl2(chunk_size: int) -> VLMModel:
+    from vllm import LLM
+
     llm = LLM(
         model="deepseek-ai/deepseek-vl2-tiny",
         max_model_len=4096,
         max_num_seqs=2,
         hf_overrides={"architectures": ["DeepseekVLV2ForCausalLM"]},
-        limit_mm_per_prompt={"image": len(images)},
+        limit_mm_per_prompt={"image": chunk_size},
     )
 
-    placeholder = "".join(
-        f"image_{i}:<image>\n" for i in range(1, len(images) + 1)
-    )
-    prompt = f"<|User|>: {placeholder}{question}\n\n<|Assistant|>:"
+    def build(question: str, images: list):
+        placeholder = "".join(f"image_{i}:<image>\n" for i in range(1, len(images) + 1))
+        prompt = f"<|User|>: {placeholder}{question}\n\n<|Assistant|>:"
+        return prompt, images, None
 
-    return ModelRequestData(
-        llm=llm,
-        prompt=prompt,
-        image_data=images,
-    )
+    return VLMModel(key="deepseek_vl2", label="DeepSeek-VL2-Tiny", llm=llm, build_fn=build)
 
 
 # ── Model registry ────────────────────────────────────────────────────────────
 
-MODEL_REGISTRY = {
-    "phi3_v":      {"loader": load_phi3_v,      "label": "Phi-3.5-Vision"},
-    "qwen2_vl":    {"loader": load_qwen2_vl,     "label": "Qwen2-VL-7B"},
-    "llava_next":  {"loader": load_llava_next,   "label": "LLaVA-v1.6-Mistral"},
-    "internvl2":   {"loader": load_internvl2,    "label": "InternVL2-8B"},
-    "deepseek_vl2":{"loader": load_deepseek_vl2, "label": "DeepSeek-VL2-Tiny"},
+MODEL_REGISTRY: dict[str, dict] = {
+    "phi3_v":       {"loader": load_phi3_v,      "label": "Phi-3.5-Vision"},
+    "qwen2_vl":     {"loader": load_qwen2_vl,    "label": "Qwen2-VL-7B"},
+    "llava_next":   {"loader": load_llava_next,  "label": "LLaVA-v1.6-Mistral"},
+    "internvl2":    {"loader": load_internvl2,   "label": "InternVL2-8B"},
+    "deepseek_vl2": {"loader": load_deepseek_vl2, "label": "DeepSeek-VL2-Tiny"},
 }
 
 
-# ── Image loading helpers ─────────────────────────────────────────────────────
+# ── Factory ───────────────────────────────────────────────────────────────────
 
-def load_images(image_paths_or_urls: list) -> list:
-    """Load images from local paths or URLs into PIL.Image objects."""
+def load_model(model_key: str, chunk_size: int, mock: bool = False) -> VLMModel | MockVLMModel:
+    """Load a VLM (or return a mock). Call once per model before processing videos."""
+    if model_key not in MODEL_REGISTRY:
+        raise ValueError(f"Unknown model key '{model_key}'. Available: {list(MODEL_REGISTRY)}")
+
+    info = MODEL_REGISTRY[model_key]
+
+    if mock:
+        logger.info("Loading MOCK model for %s (no GPU required)", info["label"])
+        return MockVLMModel(key=model_key, label=info["label"])
+
+    logger.info("Loading %s into GPU memory…", info["label"])
+    return info["loader"](chunk_size)
+
+
+# ── Image loading helper ──────────────────────────────────────────────────────
+
+def load_images(image_paths: list[str]) -> list[PIL.Image.Image]:
+    """Load local JPG/PNG paths into PIL.Image objects (RGB)."""
     images = []
-    for src in image_paths_or_urls:
-        if src.startswith("http://") or src.startswith("https://"):
-            images.append(fetch_image(src))
-        else:
-            path = Path(src)
-            if not path.exists():
-                raise FileNotFoundError(f"Image not found: {src}")
-            images.append(PIL.Image.open(path).convert("RGB"))
+    for src in image_paths:
+        path = Path(src)
+        if not path.exists():
+            raise FileNotFoundError(f"Image not found: {src}")
+        images.append(PIL.Image.open(path).convert("RGB"))
     return images
-
-
-# ── Inference runner ──────────────────────────────────────────────────────────
-
-def run_inference(
-    model_key: str,
-    question: str,
-    images: list,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
-    temperature: float = DEFAULT_TEMPERATURE,
-) -> dict:
-    """Run inference for a single model. Returns a result dict."""
-    logger.info("Running %s on %d image(s) | q: %s", MODEL_REGISTRY[model_key]["label"], len(images), question)
-
-    loader = MODEL_REGISTRY[model_key]["loader"]
-
-    t0 = time.time()
-    req = loader(question, images)
-
-    sampling_params = SamplingParams(
-        temperature=temperature,
-        max_tokens=max_tokens,
-        stop_token_ids=req.stop_token_ids or [],
-    )
-
-    outputs = req.llm.generate(
-        {
-            "prompt": req.prompt,
-            "multi_modal_data": {"image": req.image_data},
-        },
-        sampling_params=sampling_params,
-    )
-
-    elapsed = time.time() - t0
-    answer = outputs[0].outputs[0].text.strip()
-
-    logger.info("%s answered in %.1fs: %s", MODEL_REGISTRY[model_key]["label"], elapsed, answer)
-
-    return {
-        "model": MODEL_REGISTRY[model_key]["label"],
-        "model_key": model_key,
-        "question": question,
-        "answer": answer,
-        "elapsed_seconds": round(elapsed, 2),
-    }
-
-
-# ── Compare mode ──────────────────────────────────────────────────────────────
-
-def run_comparison(
-    model_keys: list,
-    question: str,
-    images: list,
-    max_tokens: int,
-    temperature: float,
-    output_file: Optional[str] = None,
-):
-    """Run the same question+images through multiple models and compare."""
-    results = []
-    for key in model_keys:
-        try:
-            result = run_inference(key, question, images, max_tokens, temperature)
-            results.append(result)
-        except Exception as e:
-            logger.error("%s failed: %s", MODEL_REGISTRY[key]["label"], e)
-            results.append({
-                "model": MODEL_REGISTRY[key]["label"],
-                "model_key": key,
-                "error": str(e),
-            })
-
-    # ── Save to JSON if requested ──
-    if output_file:
-        with open(output_file, "w") as f:
-            json.dump(results, f, indent=2)
-        logger.info("Results saved → %s", output_file)
-
-    return results
-
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="VLM inference across multiple models on SageMaker"
-    )
-    parser.add_argument(
-        "--model", "-m",
-        type=str,
-        choices=list(MODEL_REGISTRY.keys()),
-        default="phi3_v",
-        help="Which model to run (ignored when --compare is set)",
-    )
-    parser.add_argument(
-        "--compare",
-        action="store_true",
-        help="Run ALL models and compare their outputs",
-    )
-    parser.add_argument(
-        "--compare-models",
-        nargs="+",
-        choices=list(MODEL_REGISTRY.keys()),
-        default=list(MODEL_REGISTRY.keys()),
-        help="Subset of models to compare (default: all)",
-    )
-    parser.add_argument(
-        "--images", "-i",
-        nargs="+",
-        required=True,
-        help="Local image paths or URLs (space-separated)",
-    )
-    parser.add_argument(
-        "--question", "-q",
-        type=str,
-        default=DEFAULT_QUESTION,
-        help="Question to ask about the image(s)",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=DEFAULT_MAX_TOKENS,
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=DEFAULT_TEMPERATURE,
-    )
-    parser.add_argument(
-        "--output", "-o",
-        type=str,
-        default=None,
-        help="Optional JSON file to save results (e.g. results.json)",
-    )
-    return parser.parse_args()
-
-
-def main():
-    args = parse_args()
-    images = load_images(args.images)
-
-    if args.compare:
-        run_comparison(
-            model_keys=args.compare_models,
-            question=args.question,
-            images=images,
-            max_tokens=args.max_tokens,
-            temperature=args.temperature,
-            output_file=args.output,
-        )
-    else:
-        result = run_inference(
-            model_key=args.model,
-            question=args.question,
-            images=images,
-            max_tokens=args.max_tokens,
-            temperature=args.temperature,
-        )
-        if args.output:
-            with open(args.output, "w") as f:
-                json.dump(result, f, indent=2)
-            logger.info("Result saved → %s", args.output)
-
-
-if __name__ == "__main__":
-    main()

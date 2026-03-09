@@ -1,0 +1,26 @@
+[
+  {
+    "event_id": "evt_001",
+    "description": "3 men enter a jewelry store",
+    "timeframe": {
+      "start": "00:00:00",
+      "end": "00:00:10"
+    }
+  },
+  {
+    "event_id": "evt_002",
+    "description": "1 man pulls out a gun and grabs a woman",
+    "timeframe": {
+      "start": "00:00:10",
+      "end": "00:00:25"
+    }
+  },
+  {
+    "event_id": "evt_003",
+    "description": "The other 2 men steal the jewelry",
+    "timeframe": {
+      "start": "00:00:15",
+      "end": "00:00:40"
+    }
+  }
+]

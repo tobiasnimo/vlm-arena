@@ -1,31 +1,34 @@
 """
-LLM-as-a-Judge for VLM Arena
-==============================
-Compares VLM descriptions (aggregated across ALL video stories) against
-ground-truth event annotations and returns a compatibility score per model.
+LLM-as-a-Judge for VLM Arena.
+
+For each annotated event, the judge evaluates all stories whose timeframe
+overlaps with the event's timeframe and returns a Judgement with a 0–1 score.
 """
 
 import json
+import logging
 
 from langchain_groq import ChatGroq
 
 from config import settings
+from schemas import Event, Judgement, Story
 
+logger = logging.getLogger(__name__)
 
 JUDGE_PROMPT = """\
-You are an objective evaluator assessing how well a Vision Language Model (VLM) described a video.
+You are an objective evaluator assessing how well a Vision Language Model (VLM) described a specific event in a video.
 
-## Ground-Truth Annotations
-The following bullet points describe the key events that occur in the video:
-{annotations}
+## Event to Evaluate
+Description: {event_description}
+Timeframe: {event_start} → {event_end}
 
 ## VLM Descriptions
-The VLM processed the video in chronological chunks and produced the following descriptions:
+The VLM processed the video in chunks. The following chunks overlap with the event's timeframe:
 {descriptions}
 
 ## Task
-Compare the VLM descriptions against the ground-truth annotations.
-Evaluate how well the VLM captured the events listed in the annotations.
+Evaluate how well the VLM descriptions captured the event described above.
+Focus only on whether the event was detected and accurately described — ignore content outside the event's scope.
 
 Respond with a JSON object (and nothing else) in this exact format:
 {{
@@ -33,29 +36,45 @@ Respond with a JSON object (and nothing else) in this exact format:
   "score": <float 0-1>
 }}
 
-Score guide: 0 = missed everything, 1 = all events perfectly captured."""
+Score guide: 0 = event completely missed, 1 = event fully and accurately captured."""
 
 
-def judge_descriptions(
-    annotations: str,
-    descriptions: str,
-) -> dict:
-    """Judge a single model's full-video descriptions against annotations.
+def judge_event(event: Event, stories: list[Story]) -> Judgement:
+    """
+    Score a single event against all stories that overlap with it.
 
     Args:
-        annotations: Ground-truth event annotations for the video.
-        descriptions: Pre-aggregated chronological descriptions for one model.
+        event:   The annotated event to evaluate.
+        stories: All stories for this video-model pair.
 
     Returns:
-        Dict with 'score' (float 0-1) and 'analysis' (str).
+        A Judgement with score, analysis, and the list of story IDs used.
     """
-    judge = ChatGroq(
-        model="llama-3.1-8b-instant",
-        api_key=settings.groq_api_key,
+    overlapping = [s for s in stories if event.timeframe.overlaps(s.timeframe)]
+
+    if not overlapping:
+        logger.warning("No stories overlap with event '%s' (%s → %s) — skipping judge call",
+                       event.event_id, event.timeframe.start, event.timeframe.end)
+        return Judgement(
+            event_id=event.event_id,
+            event_description=event.description,
+            event_timeframe=event.timeframe,
+            story_ids=[],
+            score=None,
+            analysis="No VLM stories overlap with this event's timeframe.",
+        )
+
+    descriptions = "\n\n".join(
+        f"[{s.story_id} | {s.timeframe.start}–{s.timeframe.end}]\n{s.answer}"
+        for s in overlapping
     )
 
+    judge = ChatGroq(model="llama-3.1-8b-instant", api_key=settings.groq_api_key)
+
     prompt = JUDGE_PROMPT.format(
-        annotations=annotations.strip(),
+        event_description=event.description,
+        event_start=event.timeframe.start,
+        event_end=event.timeframe.end,
         descriptions=descriptions,
     )
 
@@ -65,9 +84,19 @@ def judge_descriptions(
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
+        logger.warning("Judge returned non-JSON response for event '%s'", event.event_id)
         parsed = {"analysis": raw, "score": None}
 
-    return {
-        "score": parsed.get("score"),
-        "analysis": parsed.get("analysis", ""),
-    }
+    score = parsed.get("score")
+    analysis = parsed.get("analysis", "")
+
+    logger.info("[%s] event '%s' → score: %s", event.event_id, event.description[:60], score)
+
+    return Judgement(
+        event_id=event.event_id,
+        event_description=event.description,
+        event_timeframe=event.timeframe,
+        story_ids=[s.story_id for s in overlapping],
+        score=score,
+        analysis=analysis,
+    )
