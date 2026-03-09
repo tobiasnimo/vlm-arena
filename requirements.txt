@@ -9,7 +9,11 @@ huggingface_hub>=0.23.0
 
 # Utils
 opencv-python
-tqmd
+tqdm
+pydantic-settings>=2.0.0
+
+# Judge
+langchain-groq
 
 # Model-specific extras
 qwen-vl-utils       # required for Qwen2-VL
