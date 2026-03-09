@@ -180,6 +180,35 @@ def load_internvl2(chunk_size: int) -> VLMModel:
     return VLMModel(key="internvl2", label="InternVL2-8B", llm=llm, build_fn=build)
 
 
+def load_qwen35_vl(chunk_size: int) -> VLMModel:
+    """Qwen3.5-0.8B — lightweight multimodal model, same vision pipeline as Qwen2-VL."""
+    from vllm import LLM
+    from transformers import AutoProcessor
+
+    try:
+        from qwen_vl_utils import process_vision_info
+    except ImportError:
+        raise ImportError("Run: pip install qwen-vl-utils")
+
+    model_name = "Qwen/Qwen3.5-0.8B"
+    llm = LLM(
+        model=model_name,
+        max_model_len=8192,
+        max_num_seqs=2,
+        limit_mm_per_prompt={"image": chunk_size},
+    )
+    processor = AutoProcessor.from_pretrained(model_name)
+
+    def build(question: str, images: list):
+        placeholders = [{"type": "image", "image": img} for img in images]
+        messages = [{"role": "user", "content": [*placeholders, {"type": "text", "text": question}]}]
+        prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        image_data, _ = process_vision_info(messages)
+        return prompt, image_data, None
+
+    return VLMModel(key="qwen35_vl", label="Qwen3.5-0.8B", llm=llm, build_fn=build)
+
+
 def load_deepseek_vl2(chunk_size: int) -> VLMModel:
     from vllm import LLM
 
@@ -202,10 +231,11 @@ def load_deepseek_vl2(chunk_size: int) -> VLMModel:
 # ── Model registry ────────────────────────────────────────────────────────────
 
 MODEL_REGISTRY: dict[str, dict] = {
-    "phi3_v":       {"loader": load_phi3_v,      "label": "Phi-3.5-Vision"},
-    "qwen2_vl":     {"loader": load_qwen2_vl,    "label": "Qwen2-VL-7B"},
-    "llava_next":   {"loader": load_llava_next,  "label": "LLaVA-v1.6-Mistral"},
-    "internvl2":    {"loader": load_internvl2,   "label": "InternVL2-8B"},
+    "phi3_v":       {"loader": load_phi3_v,       "label": "Phi-3.5-Vision"},
+    "qwen2_vl":     {"loader": load_qwen2_vl,     "label": "Qwen2-VL-7B"},
+    "qwen35_vl":    {"loader": load_qwen35_vl,    "label": "Qwen3.5-0.8B"},
+    "llava_next":   {"loader": load_llava_next,   "label": "LLaVA-v1.6-Mistral"},
+    "internvl2":    {"loader": load_internvl2,    "label": "InternVL2-8B"},
     "deepseek_vl2": {"loader": load_deepseek_vl2, "label": "DeepSeek-VL2-Tiny"},
 }
 
