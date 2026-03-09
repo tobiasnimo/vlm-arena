@@ -209,6 +209,31 @@ def load_qwen35_vl(chunk_size: int) -> VLMModel:
     return VLMModel(key="qwen35_vl", label="Qwen3.5-0.8B", llm=llm, build_fn=build)
 
 
+def load_minicpm_v4(chunk_size: int) -> VLMModel:
+    """MiniCPM-V-4 — 4.1B multimodal model (SigLIP2-400M + MiniCPM4-3B)."""
+    from vllm import LLM
+
+    model_name = "openbmb/MiniCPM-V-4"
+    llm = LLM(
+        model=model_name,
+        trust_remote_code=True,
+        max_model_len=4096,
+        max_num_seqs=2,
+        limit_mm_per_prompt={"image": chunk_size},
+    )
+
+    def build(question: str, images: list):
+        placeholders = "\n".join(f"<|image_{i}|>" for i in range(1, len(images) + 1))
+        prompt = (
+            f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+            f"<|im_start|>user\n{placeholders}\n{question}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
+        return prompt, images, None
+
+    return VLMModel(key="minicpm_v4", label="MiniCPM-V-4", llm=llm, build_fn=build)
+
+
 def load_deepseek_vl2(chunk_size: int) -> VLMModel:
     from vllm import LLM
 
@@ -234,6 +259,7 @@ MODEL_REGISTRY: dict[str, dict] = {
     "phi3_v":       {"loader": load_phi3_v,       "label": "Phi-3.5-Vision"},
     "qwen2_vl":     {"loader": load_qwen2_vl,     "label": "Qwen2-VL-7B"},
     "qwen35_vl":    {"loader": load_qwen35_vl,    "label": "Qwen3.5-0.8B"},
+    "minicpm_v4":   {"loader": load_minicpm_v4,   "label": "MiniCPM-V-4"},
     "llava_next":   {"loader": load_llava_next,   "label": "LLaVA-v1.6-Mistral"},
     "internvl2":    {"loader": load_internvl2,    "label": "InternVL2-8B"},
     "deepseek_vl2": {"loader": load_deepseek_vl2, "label": "DeepSeek-VL2-Tiny"},
