@@ -96,10 +96,11 @@ def load_phi3_v(chunk_size: int) -> VLMModel:
     llm = LLM(
         model="microsoft/Phi-3.5-vision-instruct",
         trust_remote_code=True,
+        dtype="float16",      # workaround for vLLM 0.17.0 CUBLAS bf16 bug on CUDA 12.9
         max_model_len=4096,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
-        enforce_eager=True,  # workaround for vLLM 0.17.0 CUBLAS crash during vision encoder profiling
+        enforce_eager=True,
     )
 
     def build(question: str, images: list):
@@ -122,6 +123,7 @@ def load_qwen2_vl(chunk_size: int) -> VLMModel:
     model_name = "Qwen/Qwen2-VL-7B-Instruct"
     llm = LLM(
         model=model_name,
+        dtype="float16",      # workaround for vLLM 0.17.0 CUBLAS bf16 bug on CUDA 12.9
         max_model_len=8192,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
@@ -144,6 +146,7 @@ def load_llava_next(chunk_size: int) -> VLMModel:
     model_name = "llava-hf/llava-v1.6-mistral-7b-hf"
     llm = LLM(
         model=model_name,
+        dtype="float16",      # workaround for vLLM 0.17.0 CUBLAS bf16 bug on CUDA 12.9
         max_model_len=8192,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
@@ -165,6 +168,7 @@ def load_internvl2(chunk_size: int) -> VLMModel:
     llm = LLM(
         model=model_name,
         trust_remote_code=True,
+        dtype="float16",      # workaround for vLLM 0.17.0 CUBLAS bf16 bug on CUDA 12.9
         max_model_len=4096,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
@@ -193,10 +197,11 @@ def load_qwen35_vl(chunk_size: int) -> VLMModel:
     model_name = "Qwen/Qwen3.5-0.8B"
     llm = LLM(
         model=model_name,
+        dtype="float16",      # workaround for vLLM 0.17.0 CUBLAS bf16 bug on CUDA 12.9
         max_model_len=8192,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
-        enforce_eager=True,  # workaround for vLLM 0.17.0 CUBLAS crash during vision encoder profiling
+        enforce_eager=True,
     )
     processor = AutoProcessor.from_pretrained(model_name)
 
@@ -218,10 +223,11 @@ def load_minicpm_v4(chunk_size: int) -> VLMModel:
     llm = LLM(
         model=model_name,
         trust_remote_code=True,
+        dtype="float16",      # workaround for vLLM 0.17.0 CUBLAS bf16 bug on CUDA 12.9
         max_model_len=4096,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
-        enforce_eager=True,  # workaround for vLLM 0.17.0 CUBLAS crash during vision encoder profiling
+        enforce_eager=True,
     )
 
     def build(question: str, images: list):
@@ -241,6 +247,7 @@ def load_deepseek_vl2(chunk_size: int) -> VLMModel:
 
     llm = LLM(
         model="deepseek-ai/deepseek-vl2-tiny",
+        dtype="float16",      # workaround for vLLM 0.17.0 CUBLAS bf16 bug on CUDA 12.9
         max_model_len=4096,
         max_num_seqs=2,
         hf_overrides={"architectures": ["DeepseekVLV2ForCausalLM"]},
