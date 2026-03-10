@@ -227,11 +227,17 @@ def main():
     # ── Leaderboard ───────────────────────────────────────────────────────────
     # Load all previously saved results from disk so the leaderboard always
     # reflects every model that has ever been run, not just the current session.
+    # Only include results whose video still exists in the videos directory to
+    # avoid stale entries from removed videos.
+    current_video_ids = {p.parent.name for p in videos}
     all_result_paths = [p for p in RESULTS_DIR.glob("*/*.json") if p.name != "leaderboard.json"]
     for path in all_result_paths:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 result = VideoResult.model_validate_json(f.read())
+            if result.video_id not in current_video_ids:
+                logger.debug("Skipping stale result %s (video no longer in videos dir)", path)
+                continue
             if result not in all_results:
                 all_results.append(result)
         except Exception as exc:
