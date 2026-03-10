@@ -41,6 +41,8 @@ CHUNK_SIZE = settings.chunk_size
 CHUNK_OVERLAP = settings.chunk_overlap
 MODELS = settings.models
 MOCK = settings.mock_inference
+MAX_VIDEOS = settings.max_videos
+PASS_THRESHOLD = settings.pass_threshold
 
 RESULTS_DIR = Path(__file__).parent.parent / "results"
 VIDEOS_DIR = Path(__file__).parent.parent / "videos"
@@ -178,6 +180,10 @@ def main():
         logger.warning("No .mp4 files found under %s", VIDEOS_DIR)
         sys.exit(0)
 
+    if MAX_VIDEOS > 0:
+        videos = videos[:MAX_VIDEOS]
+        logger.info("MAX_VIDEOS=%d — processing %d of the available video(s)", MAX_VIDEOS, len(videos))
+
     logger.info("Found %d video(s). Loading %d model(s)%s…",
                 len(videos), len(MODELS), " [MOCK]" if MOCK else "")
 
@@ -232,6 +238,9 @@ def main():
                 "model_key": next(r.model_key for r in all_results if r.model_label == label),
                 "avg_score": round(sum(scores) / len(scores), 4),
                 "n_judgements": len(scores),
+                "n_passed": sum(1 for s in scores if s >= PASS_THRESHOLD),
+                "n_failed": sum(1 for s in scores if s < PASS_THRESHOLD),
+                "success_ratio": round(sum(1 for s in scores if s >= PASS_THRESHOLD) / len(scores), 4),
             }
             for label, scores in scores_by_model.items()
         ],
@@ -240,8 +249,12 @@ def main():
     )
 
     for entry in leaderboard:
-        logger.info("%-30s avg score: %.4f  (n=%d)",
-                    entry["model_label"], entry["avg_score"], entry["n_judgements"])
+        logger.info(
+            "%-30s avg score: %.4f  pass: %d  fail: %d  success ratio: %.2f%%  (n=%d)",
+            entry["model_label"], entry["avg_score"],
+            entry["n_passed"], entry["n_failed"],
+            entry["success_ratio"] * 100, entry["n_judgements"],
+        )
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     with open(RESULTS_DIR / "leaderboard.json", "w", encoding="utf-8") as f:

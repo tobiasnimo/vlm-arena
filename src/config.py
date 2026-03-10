@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     # Set to True to skip GPU model loading and return placeholder answers
     mock_inference: bool = False
 
+    # Limit the number of videos to process (0 = no limit)
+    max_videos: int = 0
+
+    # Score threshold: judgements >= this value are "pass", below are "fail"
+    pass_threshold: float = 0.5
+
     # Override HuggingFace cache location (useful when root volume is small, e.g. SageMaker)
     hf_home: str = ""
 
