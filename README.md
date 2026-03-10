@@ -2,7 +2,6 @@
 
 Evaluate multiple Vision Language Models (VLMs) on video understanding tasks. The pipeline extracts frames from videos, runs them through several VLMs, and uses an LLM-as-a-judge to score each model's descriptions against per-event ground-truth annotations.
 
----
 
 ## How it works
 
@@ -19,7 +18,6 @@ videos/<name>/
 4. **Results** — one JSON file per video-model pair, saved to `results/<model_key>/<video_id>.json`
 5. **Leaderboard** — aggregated average scores across all videos and events, saved to `results/leaderboard.json`
 
----
 
 ## Project structure
 
@@ -37,7 +35,6 @@ results/                  # output JSON files (created automatically)
 config.txt                # configuration (see below)
 ```
 
----
 
 ## Setup
 
@@ -79,7 +76,6 @@ MAX_VIDEOS=10        # process only the first N videos (0 = no limit)
 PASS_THRESHOLD=0.6   # judgements >= this score are "pass"; below are "fail"
 ```
 
----
 
 ## Running
 
@@ -89,7 +85,6 @@ python src/arena.py
 
 The script discovers all `*.mp4` files under `videos/`, loads all configured models once, processes every video × model pair, and writes results to `results/`.
 
----
 
 ## Input format
 
@@ -131,7 +126,6 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 ]
 ```
 
----
 
 ## Output format
 
@@ -185,9 +179,8 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 ]
 ```
 
-`n_passed` / `n_failed` count judgements at or above / below `PASS_THRESHOLD`. `success_ratio` is `n_passed / n_judgements`.
+> `n_passed` / `n_failed` count judgements at or above / below `PASS_THRESHOLD`. `success_ratio` is `n_passed / n_judgements`.
 
----
 
 ## Available models
 
@@ -196,6 +189,8 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 | `phi3_v`         | Phi-3.5-vision-instruct   | vLLM         | ~10 GB |
 | `qwen2_vl`       | Qwen2-VL-7B-Instruct      | vLLM         | ~18 GB |
 | `qwen35_vl`      | Qwen3.5-0.8B              | vLLM         | ~2 GB  |
+| `qwen35_vl_2b`   | Qwen3.5-2B                | vLLM         | ~4 GB  |
+| `qwen35_vl_4b`   | Qwen3.5-4B                | vLLM         | ~8 GB  |
 | `minicpm_v4`     | MiniCPM-V-4               | vLLM         | ~10 GB |
 | `llava_next`     | LLaVA-v1.6-Mistral-7B    | vLLM         | ~16 GB |
 | `internvl2`      | InternVL2-8B              | vLLM         | ~18 GB |
@@ -247,13 +242,11 @@ MODELS=["my_model"]
 
 The prompt format varies by model family — check the model card or vLLM's [supported models](https://docs.vllm.ai/en/stable/models/supported_models/) page for the correct image tokens and chat template.
 
----
 
 ## Testing without a GPU
 
 Set `MOCK_INFERENCE=true` in `.env`. Models will not be loaded; a placeholder answer is returned for every chunk so the full pipeline (chunking, judging, output writing) can be exercised locally.
 
----
 
 ## Troubleshooting
 
