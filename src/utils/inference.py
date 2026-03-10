@@ -66,6 +66,28 @@ class VLMModel:
         return answer, elapsed
 
 
+class TransformersVLMModel:
+    """VLM backed by HuggingFace Transformers (for models without native vLLM support)."""
+
+    def __init__(self, key: str, label: str, run_fn: Callable):
+        self.key = key
+        self.label = label
+        self._run_fn = run_fn
+
+    def run(
+        self,
+        question: str,
+        images: list,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        temperature: float = DEFAULT_TEMPERATURE,
+    ) -> tuple[str, float]:
+        t0 = time.time()
+        answer = self._run_fn(question, images, max_tokens, temperature)
+        elapsed = round(time.time() - t0, 2)
+        logger.info("%s answered in %.1fs", self.label, elapsed)
+        return answer, elapsed
+
+
 class MockVLMModel:
     """Fake VLM that returns placeholder text — no GPU required."""
 
@@ -255,6 +277,119 @@ def load_deepseek_vl2(chunk_size: int) -> VLMModel:
     return VLMModel(key="deepseek_vl2", label="DeepSeek-VL2-Tiny", llm=llm, build_fn=build)
 
 
+def load_fastvlm(chunk_size: int) -> TransformersVLMModel:
+    """FastVLM-1.5B — Apple's efficient VLM with FastViTHD vision encoder (~3 GB VRAM)."""
+    import torch
+    from transformers import AutoProcessor, AutoModelForCausalLM
+
+    model_name = "apple/FastVLM-1.5B"
+    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    ).eval()
+
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
+        image_tokens = "\n".join("<image>" for _ in images)
+        prompt = (
+            f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+            f"<|im_start|>user\n{image_tokens}\n{question}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
+        device = next(model.parameters()).device
+        inputs = processor(text=prompt, images=images, return_tensors="pt").to(device)
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+            )
+        generated = output_ids[:, inputs["input_ids"].shape[1]:]
+        return processor.decode(generated[0], skip_special_tokens=True).strip()
+
+    return TransformersVLMModel(key="fastvlm", label="FastVLM-1.5B", run_fn=run_fn)
+
+
+def load_smolvlm2(chunk_size: int) -> TransformersVLMModel:
+    """SmolVLM2-2.2B-Instruct — HuggingFace compact VLM (~5 GB VRAM)."""
+    import torch
+    from transformers import AutoProcessor, AutoModelForVision2Seq
+
+    model_name = "HuggingFaceTB/SmolVLM2-2.2B-Instruct"
+    processor = AutoProcessor.from_pretrained(model_name)
+    model = AutoModelForVision2Seq.from_pretrained(
+        model_name,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    ).eval()
+
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
+        content = [{"type": "image"} for _ in images] + [{"type": "text", "text": question}]
+        messages = [{"role": "user", "content": content}]
+        prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        device = next(model.parameters()).device
+        inputs = processor(text=prompt, images=images, return_tensors="pt").to(device)
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+            )
+        generated = output_ids[:, inputs["input_ids"].shape[1]:]
+        return processor.decode(generated[0], skip_special_tokens=True).strip()
+
+    return TransformersVLMModel(key="smolvlm2", label="SmolVLM2-2.2B", run_fn=run_fn)
+
+
+def load_florence2(chunk_size: int) -> TransformersVLMModel:
+    """Florence-2-large-ft — Microsoft's seq2seq VLM (~2 GB VRAM).
+
+    NOTE: Florence-2 is task-token-driven, not chat-based. It always uses the
+    <DETAILED_CAPTION> task token regardless of the user prompt. Each frame in
+    the chunk is captioned independently and the results are joined.
+    """
+    import torch
+    from transformers import AutoProcessor, AutoModelForCausalLM
+
+    model_name = "microsoft/Florence-2-large-ft"
+    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+        torch_dtype=torch.float16,
+        device_map="auto",
+    ).eval()
+
+    TASK = "<DETAILED_CAPTION>"
+
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
+        device = next(model.parameters()).device
+        descriptions = []
+        for img in images:
+            inputs = processor(text=TASK, images=img, return_tensors="pt").to(device)
+            inputs["pixel_values"] = inputs["pixel_values"].to(torch.float16)
+            with torch.no_grad():
+                generated_ids = model.generate(
+                    input_ids=inputs["input_ids"],
+                    pixel_values=inputs["pixel_values"],
+                    max_new_tokens=max_tokens,
+                    do_sample=False,
+                    num_beams=3,
+                )
+            generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+            parsed = processor.post_process_generation(
+                generated_text, task=TASK, image_size=(img.width, img.height)
+            )
+            descriptions.append(parsed.get(TASK, ""))
+        return " | ".join(descriptions)
+
+    return TransformersVLMModel(key="florence2", label="Florence-2-large", run_fn=run_fn)
+
+
 # ── Model registry ────────────────────────────────────────────────────────────
 
 MODEL_REGISTRY: dict[str, dict] = {
@@ -265,12 +400,15 @@ MODEL_REGISTRY: dict[str, dict] = {
     "llava_next":   {"loader": load_llava_next,   "label": "LLaVA-v1.6-Mistral"},
     "internvl2":    {"loader": load_internvl2,    "label": "InternVL2-8B"},
     "deepseek_vl2": {"loader": load_deepseek_vl2, "label": "DeepSeek-VL2-Tiny"},
+    "fastvlm":      {"loader": load_fastvlm,      "label": "FastVLM-1.5B"},
+    "smolvlm2":     {"loader": load_smolvlm2,     "label": "SmolVLM2-2.2B"},
+    "florence2":    {"loader": load_florence2,    "label": "Florence-2-large"},
 }
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
-def load_model(model_key: str, chunk_size: int, mock: bool = False) -> VLMModel | MockVLMModel:
+def load_model(model_key: str, chunk_size: int, mock: bool = False) -> VLMModel | TransformersVLMModel | MockVLMModel:
     """Load a VLM (or return a mock). Call once per model before processing videos."""
     if model_key not in MODEL_REGISTRY:
         raise ValueError(f"Unknown model key '{model_key}'. Available: {list(MODEL_REGISTRY)}")

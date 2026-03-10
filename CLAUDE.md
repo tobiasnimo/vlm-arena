@@ -85,8 +85,9 @@ VideoResult(video_id, model_key, model_label, video_duration, fps,
 ## Inference design
 
 - `VLMModel` wraps a loaded vLLM `LLM` instance + a model-specific `build_fn(question, images) → (prompt, image_data, stop_token_ids)`.
+- `TransformersVLMModel` wraps a HuggingFace Transformers model + a `run_fn(question, images, max_tokens, temperature) → str` closure. Used for models without native vLLM support (`fastvlm`, `smolvlm2`, `florence2`).
 - Models are loaded **once** before iterating videos (not per-chunk).
-- `limit_mm_per_prompt` is set to `CHUNK_SIZE` at load time.
+- `limit_mm_per_prompt` is set to `CHUNK_SIZE` at load time (vLLM models only).
 - `MockVLMModel` has the same `.run()` interface but returns fake text instantly — safe on machines with no GPU.
 - Factory: `load_model(model_key, chunk_size, mock=False)`.
 
@@ -112,4 +113,8 @@ Always use `MOCK_INFERENCE=true` for local testing and schema/logic validation.
 
 ## Available model keys
 
-`phi3_v`, `qwen2_vl`, `llava_next`, `internvl2`, `deepseek_vl2`
+`phi3_v`, `qwen2_vl`, `qwen35_vl`, `minicpm_v4`, `llava_next`, `internvl2`, `deepseek_vl2`, `fastvlm`, `smolvlm2`, `florence2`
+
+Models backed by **Transformers** (not vLLM): `fastvlm`, `smolvlm2`, `florence2` — these use `TransformersVLMModel` instead of `VLMModel`.
+
+> **Florence-2 caveat:** task-token-driven (`<DETAILED_CAPTION>`), ignores the user prompt; captions each frame individually.

@@ -191,15 +191,20 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 
 ## Available models
 
-| Key              | Model                    | VRAM   |
-|------------------|--------------------------|--------|
-| `phi3_v`         | Phi-3.5-vision-instruct  | ~10 GB |
-| `qwen2_vl`       | Qwen2-VL-7B-Instruct     | ~18 GB |
-| `qwen35_vl`      | Qwen3.5-0.8B             | ~2 GB  |
-| `minicpm_v4`     | MiniCPM-V-4              | ~10 GB |
-| `llava_next`     | LLaVA-v1.6-Mistral-7B   | ~16 GB |
-| `internvl2`      | InternVL2-8B             | ~18 GB |
-| `deepseek_vl2`   | DeepSeek-VL2-Tiny        | ~8 GB  |
+| Key              | Model                     | Backend      | VRAM   |
+|------------------|---------------------------|--------------|--------|
+| `phi3_v`         | Phi-3.5-vision-instruct   | vLLM         | ~10 GB |
+| `qwen2_vl`       | Qwen2-VL-7B-Instruct      | vLLM         | ~18 GB |
+| `qwen35_vl`      | Qwen3.5-0.8B              | vLLM         | ~2 GB  |
+| `minicpm_v4`     | MiniCPM-V-4               | vLLM         | ~10 GB |
+| `llava_next`     | LLaVA-v1.6-Mistral-7B    | vLLM         | ~16 GB |
+| `internvl2`      | InternVL2-8B              | vLLM         | ~18 GB |
+| `deepseek_vl2`   | DeepSeek-VL2-Tiny         | vLLM         | ~8 GB  |
+| `fastvlm`        | FastVLM-1.5B              | Transformers | ~3 GB  |
+| `smolvlm2`       | SmolVLM2-2.2B-Instruct    | Transformers | ~5 GB  |
+| `florence2`      | Florence-2-large-ft       | Transformers | ~2 GB  |
+
+> **Note — Florence-2:** this model is task-token-driven (`<DETAILED_CAPTION>`), not chat-based. The video prompt is ignored; each frame is captioned independently and the captions are joined. Florence-2 has no native vLLM support in versions >0.9.1.
 
 ### Adding a new model
 
