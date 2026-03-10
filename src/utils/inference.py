@@ -337,13 +337,19 @@ def load_deepseek_vl2(chunk_size: int) -> VLMModel:
     return VLMModel(key="deepseek_vl2", label="DeepSeek-VL2-Tiny", llm=llm, build_fn=build)
 
 
-def load_fastvlm(chunk_size: int) -> TransformersVLMModel:
-    """FastVLM-1.5B — Apple's efficient VLM with FastViTHD vision encoder (~3 GB VRAM)."""
-    import torch
-    from transformers import AutoProcessor, AutoModelForCausalLM
+def _load_fastvlm(model_name: str, key: str, label: str) -> TransformersVLMModel:
+    """Shared loader for all FastVLM variants (0.5B, 1.5B, 7B).
 
-    model_name = "apple/FastVLM-1.5B"
-    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+    FastVLM uses a custom LLaVA-based architecture that requires manual image
+    token handling: each <image> in the prompt is replaced by token index -200,
+    and pixel values are prepared via the model's own vision tower processor.
+    """
+    import torch
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+
+    IMAGE_TOKEN_INDEX = -200
+
+    tok = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         trust_remote_code=True,
@@ -352,25 +358,54 @@ def load_fastvlm(chunk_size: int) -> TransformersVLMModel:
     ).eval()
 
     def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
-        image_tokens = "\n".join("<image>" for _ in images)
-        prompt = (
-            f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
-            f"<|im_start|>user\n{image_tokens}\n{question}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
-        device = next(model.parameters()).device
-        inputs = processor(text=prompt, images=images, return_tensors="pt").to(device)
+        # One <image> placeholder per frame
+        image_placeholders = "\n".join("<image>" for _ in images)
+        messages = [{"role": "user", "content": f"{image_placeholders}\n{question}"}]
+        rendered = tok.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+
+        # Split at each <image> and insert IMAGE_TOKEN_INDEX (-200)
+        parts = rendered.split("<image>")
+        input_ids_parts = []
+        for i, part in enumerate(parts):
+            ids = tok(part, return_tensors="pt", add_special_tokens=False).input_ids
+            input_ids_parts.append(ids)
+            if i < len(parts) - 1:
+                input_ids_parts.append(torch.tensor([[IMAGE_TOKEN_INDEX]], dtype=ids.dtype))
+        input_ids = torch.cat(input_ids_parts, dim=1).to(model.device)
+
+        # Process all frames via the vision tower's image processor
+        px = model.get_vision_tower().image_processor(
+            images=images, return_tensors="pt"
+        )["pixel_values"].to(model.device, dtype=model.dtype)
+
         with torch.no_grad():
             output_ids = model.generate(
-                **inputs,
+                inputs=input_ids,
+                attention_mask=torch.ones_like(input_ids),
+                images=px,
                 max_new_tokens=max_tokens,
                 do_sample=temperature > 0,
                 temperature=temperature if temperature > 0 else None,
             )
-        generated = output_ids[:, inputs["input_ids"].shape[1]:]
-        return processor.decode(generated[0], skip_special_tokens=True).strip()
+        generated = output_ids[:, input_ids.shape[1]:]
+        return tok.decode(generated[0], skip_special_tokens=True).strip()
 
-    return TransformersVLMModel(key="fastvlm", label="FastVLM-1.5B", run_fn=run_fn)
+    return TransformersVLMModel(key=key, label=label, run_fn=run_fn)
+
+
+def load_fastvlm_0b5(chunk_size: int) -> TransformersVLMModel:
+    """FastVLM-0.5B — smallest FastVLM variant, Qwen2-0.5B backbone (~1 GB VRAM)."""
+    return _load_fastvlm("apple/FastVLM-0.5B", "fastvlm_0b5", "FastVLM-0.5B")
+
+
+def load_fastvlm(chunk_size: int) -> TransformersVLMModel:
+    """FastVLM-1.5B — Apple's efficient VLM with FastViTHD vision encoder (~3 GB VRAM)."""
+    return _load_fastvlm("apple/FastVLM-1.5B", "fastvlm", "FastVLM-1.5B")
+
+
+def load_fastvlm_7b(chunk_size: int) -> TransformersVLMModel:
+    """FastVLM-7B — largest FastVLM variant, Qwen2-7B backbone (~16 GB VRAM)."""
+    return _load_fastvlm("apple/FastVLM-7B", "fastvlm_7b", "FastVLM-7B")
 
 
 def load_smolvlm2(chunk_size: int) -> TransformersVLMModel:
@@ -462,7 +497,9 @@ MODEL_REGISTRY: dict[str, dict] = {
     "llava_next":   {"loader": load_llava_next,   "label": "LLaVA-v1.6-Mistral"},
     "internvl2":    {"loader": load_internvl2,    "label": "InternVL2-8B"},
     "deepseek_vl2": {"loader": load_deepseek_vl2, "label": "DeepSeek-VL2-Tiny"},
+    "fastvlm_0b5":  {"loader": load_fastvlm_0b5,  "label": "FastVLM-0.5B"},
     "fastvlm":      {"loader": load_fastvlm,      "label": "FastVLM-1.5B"},
+    "fastvlm_7b":   {"loader": load_fastvlm_7b,   "label": "FastVLM-7B"},
     "smolvlm2":     {"loader": load_smolvlm2,     "label": "SmolVLM2-2.2B"},
     "florence2":    {"loader": load_florence2,    "label": "Florence-2-large"},
 }

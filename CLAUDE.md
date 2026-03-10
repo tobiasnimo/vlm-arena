@@ -113,8 +113,8 @@ Always use `MOCK_INFERENCE=true` for local testing and schema/logic validation.
 
 ## Available model keys
 
-`phi3_v`, `qwen2_vl`, `qwen35_vl`, `qwen35_vl_2b`, `qwen35_vl_4b`, `minicpm_v4`, `llava_next`, `internvl2`, `deepseek_vl2`, `fastvlm`, `smolvlm2`, `florence2`
+`phi3_v`, `qwen2_vl`, `qwen35_vl`, `qwen35_vl_2b`, `qwen35_vl_4b`, `minicpm_v4`, `llava_next`, `internvl2`, `deepseek_vl2`, `fastvlm_0b5`, `fastvlm`, `fastvlm_7b`, `smolvlm2`, `florence2`
 
-Models backed by **Transformers** (not vLLM): `fastvlm`, `smolvlm2`, `florence2` — these use `TransformersVLMModel` instead of `VLMModel`.
+Models backed by **Transformers** (not vLLM): `fastvlm_0b5`, `fastvlm`, `fastvlm_7b`, `smolvlm2`, `florence2` — these use `TransformersVLMModel` instead of `VLMModel`.
 
 > **Florence-2 caveat:** task-token-driven (`<DETAILED_CAPTION>`), ignores the user prompt; captions each frame individually.

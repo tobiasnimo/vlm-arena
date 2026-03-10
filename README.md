@@ -195,7 +195,9 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 | `llava_next`     | LLaVA-v1.6-Mistral-7B    | vLLM         | ~16 GB |
 | `internvl2`      | InternVL2-8B              | vLLM         | ~18 GB |
 | `deepseek_vl2`   | DeepSeek-VL2-Tiny         | vLLM         | ~8 GB  |
+| `fastvlm_0b5`    | FastVLM-0.5B              | Transformers | ~1 GB  |
 | `fastvlm`        | FastVLM-1.5B              | Transformers | ~3 GB  |
+| `fastvlm_7b`     | FastVLM-7B                | Transformers | ~16 GB |
 | `smolvlm2`       | SmolVLM2-2.2B-Instruct    | Transformers | ~5 GB  |
 | `florence2`      | Florence-2-large-ft       | Transformers | ~2 GB  |
 
