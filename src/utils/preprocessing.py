@@ -12,6 +12,16 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def get_video_duration(video_path) -> float:
+    """Return the duration of a video file in seconds."""
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open video file '{video_path}'")
+    duration = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    return duration
+
+
 def extract_frames(video_path, output_dir, fps: float = None) -> list[str]:
     cap = cv2.VideoCapture(str(video_path))
 

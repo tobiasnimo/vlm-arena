@@ -25,7 +25,7 @@ from config import settings
 from schemas import Event, Story, Timeframe, VideoResult
 from utils.inference import load_model, load_images, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 from utils.judge import judge_event
-from utils.preprocessing import extract_frames, parse_frame_timestamp, make_chunks
+from utils.preprocessing import extract_frames, get_video_duration, parse_frame_timestamp, make_chunks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,6 +42,7 @@ CHUNK_OVERLAP = settings.chunk_overlap
 MODELS = settings.models
 MOCK = settings.mock_inference
 MAX_VIDEOS = settings.max_videos
+MAX_VIDEO_DURATION = settings.max_video_duration
 PASS_THRESHOLD = settings.pass_threshold
 
 RESULTS_DIR = Path(__file__).parent.parent / "results"
@@ -183,6 +184,21 @@ def main():
     if MAX_VIDEOS > 0:
         videos = videos[:MAX_VIDEOS]
         logger.info("MAX_VIDEOS=%d — processing %d of the available video(s)", MAX_VIDEOS, len(videos))
+
+    if MAX_VIDEO_DURATION > 0:
+        filtered = []
+        for v in videos:
+            try:
+                duration = get_video_duration(v)
+                if duration > MAX_VIDEO_DURATION:
+                    logger.info("Skipping %s — duration %.1fs exceeds MAX_VIDEO_DURATION=%.1fs",
+                                v.parent.name, duration, MAX_VIDEO_DURATION)
+                else:
+                    filtered.append(v)
+            except Exception as exc:
+                logger.warning("Could not read duration of %s: %s — including anyway", v, exc)
+                filtered.append(v)
+        videos = filtered
 
     logger.info("Found %d video(s). Loading %d model(s)%s…",
                 len(videos), len(MODELS), " [MOCK]" if MOCK else "")

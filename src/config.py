@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # Limit the number of videos to process (0 = no limit)
     max_videos: int = 0
 
+    # Skip videos longer than this many seconds (0 = no limit)
+    max_video_duration: float = 0
+
     # Score threshold: judgements >= this value are "pass", below are "fail"
     pass_threshold: float = 0.5
 
