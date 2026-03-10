@@ -48,7 +48,7 @@ judgements = [judge_event(event, stories) for event in events]  # LLM judge, per
 Output:
 ```
 results/<model_key>/<video_id>.json    # VideoResult (stories + judgements)
-results/leaderboard.json               # avg score per model across all judgements
+results/leaderboard.json               # avg score, pass/fail counts, success ratio per model
 ```
 
 ---
@@ -77,6 +77,8 @@ VideoResult(video_id, model_key, model_label, video_duration, fps,
 | `CHUNK_OVERLAP` | 0 | Overlapping frames between chunks (must be < CHUNK_SIZE) |
 | `MODELS` | `[]` | List of model keys to run |
 | `MOCK_INFERENCE` | false | Skip GPU loading; return placeholder answers |
+| `MAX_VIDEOS` | `0` | Max videos to process from the videos dir (0 = no limit) |
+| `PASS_THRESHOLD` | `0.5` | Score cutoff: judgements ≥ this are "pass", below are "fail" |
 
 ---
 

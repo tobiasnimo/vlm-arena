@@ -73,6 +73,10 @@ CHUNK_SIZE=5
 CHUNK_OVERLAP=0
 
 MODELS=["phi3_v", "qwen2_vl"]
+
+# Optional
+MAX_VIDEOS=10        # process only the first N videos (0 = no limit)
+PASS_THRESHOLD=0.6   # judgements >= this score are "pass"; below are "fail"
 ```
 
 ---
@@ -173,10 +177,15 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
     "model_label": "Phi-3.5-Vision",
     "model_key": "phi3_v",
     "avg_score": 0.78,
-    "n_judgements": 12
+    "n_judgements": 12,
+    "n_passed": 9,
+    "n_failed": 3,
+    "success_ratio": 0.75
   }
 ]
 ```
+
+`n_passed` / `n_failed` count judgements at or above / below `PASS_THRESHOLD`. `success_ratio` is `n_passed / n_judgements`.
 
 ---
 
@@ -237,7 +246,7 @@ The prompt format varies by model family — check the model card or vLLM's [sup
 
 ## Testing without a GPU
 
-Set `MOCK_INFERENCE=true` in `config.txt`. Models will not be loaded; a placeholder answer is returned for every chunk so the full pipeline (chunking, judging, output writing) can be exercised locally.
+Set `MOCK_INFERENCE=true` in `.env`. Models will not be loaded; a placeholder answer is returned for every chunk so the full pipeline (chunking, judging, output writing) can be exercised locally.
 
 ---
 
