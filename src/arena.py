@@ -225,6 +225,18 @@ def main():
             all_results.append(result)
 
     # ── Leaderboard ───────────────────────────────────────────────────────────
+    # Load all previously saved results from disk so the leaderboard always
+    # reflects every model that has ever been run, not just the current session.
+    all_result_paths = [p for p in RESULTS_DIR.glob("*/*.json") if p.name != "leaderboard.json"]
+    for path in all_result_paths:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                result = VideoResult.model_validate_json(f.read())
+            if result not in all_results:
+                all_results.append(result)
+        except Exception as exc:
+            logger.warning("Could not read result file %s: %s", path, exc)
+
     scores_by_model: dict[str, list[float]] = {}
     for result in all_results:
         for j in result.judgements:
@@ -235,7 +247,7 @@ def main():
         [
             {
                 "model_label": label,
-                "model_key": next(r.model_key for r in all_results if r.model_label == label),
+                "model_key": next(r.model_key for r in all_results if r.model_label == label),  # stable — model_key is consistent per label
                 "avg_score": round(sum(scores) / len(scores), 4),
                 "n_judgements": len(scores),
                 "n_passed": sum(1 for s in scores if s >= PASS_THRESHOLD),
