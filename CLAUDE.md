@@ -31,7 +31,7 @@ Given a video and a set of annotated events (each with a timeframe), it:
 ## Data flow
 
 ```
-videos/<video_id>/
+dataset/<video_id>/     # default path; configurable via VIDEOS_DIR
 ├── video.mp4
 ├── prompt.txt          # optional; fallback: "Describe this scene."
 └── annotations.json    # list of Event objects (event_id, description, timeframe HH:MM:SS)
@@ -79,6 +79,7 @@ VideoResult(video_id, model_key, model_label, video_duration, fps,
 | `MOCK_INFERENCE` | false | Skip GPU loading; return placeholder answers |
 | `MAX_VIDEOS` | `0` | Max videos to process from the videos dir (0 = no limit) |
 | `PASS_THRESHOLD` | `0.5` | Score cutoff: judgements ≥ this are "pass", below are "fail" |
+| `VIDEOS_DIR` | `dataset` | Path to video folders (absolute or relative to project root) |
 
 ---
 

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Score threshold: judgements >= this value are "pass", below are "fail"
     pass_threshold: float = 0.5
 
+    # Path to the directory containing video folders
+    videos_dir: str = "dataset"
+
     # Override HuggingFace cache location (useful when root volume is small, e.g. SageMaker)
     hf_home: str = ""
 

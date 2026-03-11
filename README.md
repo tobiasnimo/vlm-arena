@@ -30,7 +30,7 @@ src/
     ├── inference.py      # VLMModel class, model loaders, MockVLMModel
     ├── judge.py          # LLM-as-a-judge via Groq (per-event)
     └── preprocessing.py  # frame extraction, timestamp parsing, chunking
-videos/                   # place your video folders here
+dataset/                  # default location for video folders (configurable via VIDEOS_DIR)
 results/                  # output JSON files (created automatically)
 config.txt                # configuration (see below)
 ```
@@ -74,6 +74,7 @@ MODELS=["phi3_v", "qwen2_vl"]
 # Optional
 MAX_VIDEOS=10        # process only the first N videos (0 = no limit)
 PASS_THRESHOLD=0.6   # judgements >= this score are "pass"; below are "fail"
+VIDEOS_DIR=dataset   # path to video folders (absolute or relative to project root)
 ```
 
 
@@ -83,15 +84,15 @@ PASS_THRESHOLD=0.6   # judgements >= this score are "pass"; below are "fail"
 python src/arena.py
 ```
 
-The script discovers all `*.mp4` files under `videos/`, loads all configured models once, processes every video × model pair, and writes results to `results/`.
+The script discovers all `*.mp4` files under `VIDEOS_DIR` (default: `dataset/`), loads all configured models once, processes every video × model pair, and writes results to `results/`.
 
 
 ## Input format
 
-Each video lives in its own subdirectory under `videos/`:
+Each video lives in its own subdirectory under the configured `VIDEOS_DIR` (default: `dataset/`):
 
 ```
-videos/
+dataset/
 └── my_video/
     ├── video.mp4
     ├── prompt.txt         # e.g. "What actions are performed in this scene?"

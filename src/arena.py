@@ -46,7 +46,7 @@ MAX_VIDEO_DURATION = settings.max_video_duration
 PASS_THRESHOLD = settings.pass_threshold
 
 RESULTS_DIR = Path(__file__).parent.parent / "results"
-VIDEOS_DIR = Path(__file__).parent.parent / "videos"
+VIDEOS_DIR = Path(settings.videos_dir) if Path(settings.videos_dir).is_absolute() else Path(__file__).parent.parent / settings.videos_dir
 
 DEFAULT_PROMPT = "Describe this scene."
 
