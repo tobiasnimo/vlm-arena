@@ -6,7 +6,7 @@ Evaluate multiple Vision Language Models (VLMs) on video understanding tasks. Th
 ## How it works
 
 ```
-videos/<name>/
+dataset/<name>/
 ├── video.mp4          # input video
 ├── prompt.txt         # question to ask the VLMs  (optional — falls back to "Describe this scene.")
 └── annotations.json   # list of annotated events with timeframes  (optional — skips judge if missing)
