@@ -16,7 +16,8 @@ pydantic-settings>=2.0.0
 langchain-groq
 
 # Model-specific extras
-qwen-vl-utils       # required for Qwen2-VL
+qwen-vl-utils           # required for Qwen
+timm                    # required for FastVLM
 
 # Dev / Testing
 pytest>=8.0.0
