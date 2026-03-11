@@ -17,3 +17,7 @@ langchain-groq
 
 # Model-specific extras
 qwen-vl-utils       # required for Qwen2-VL
+
+# Dev / Testing
+pytest>=8.0.0
+pytest-mock>=3.12.0
