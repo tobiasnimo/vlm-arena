@@ -295,6 +295,7 @@ def load_qwen35_vl_4b(chunk_size: int) -> VLMModel:
 def load_minicpm_v4(chunk_size: int) -> VLMModel:
     """MiniCPM-V-4 — 4.1B multimodal model (SigLIP2-400M + MiniCPM4-3B)."""
     from vllm import LLM
+    from transformers import AutoTokenizer
 
     model_name = "openbmb/MiniCPM-V-4"
     llm = LLM(
@@ -305,15 +306,18 @@ def load_minicpm_v4(chunk_size: int) -> VLMModel:
         limit_mm_per_prompt={"image": chunk_size},
         enforce_eager=True,
     )
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+
+    stop_tokens = ["<|im_end|>", "<|endoftext|>"]
+    stop_token_ids = [tokenizer.convert_tokens_to_ids(t) for t in stop_tokens]
 
     def build(question: str, images: list):
-        placeholders = "\n".join(f"<|image_{i}|>" for i in range(1, len(images) + 1))
-        prompt = (
-            f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
-            f"<|im_start|>user\n{placeholders}\n{question}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
+        placeholders = "".join("(<image>./</image>)\n" for _ in images)
+        messages = [{"role": "user", "content": f"{placeholders}{question}"}]
+        prompt = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
         )
-        return prompt, images, None
+        return prompt, images, stop_token_ids
 
     return VLMModel(key="minicpm_v4", label="MiniCPM-V-4", llm=llm, build_fn=build)
 
