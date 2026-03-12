@@ -529,11 +529,12 @@ def load_lfm25_vl(chunk_size: int) -> TransformersVLMModel:
     from transformers import AutoProcessor, AutoModelForImageTextToText
 
     model_name = "LiquidAI/LFM2.5-VL-1.6B"
-    processor = AutoProcessor.from_pretrained(model_name)
+    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
     model = AutoModelForImageTextToText.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
         device_map="auto",
+        trust_remote_code=True,
     ).eval()
 
     def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
