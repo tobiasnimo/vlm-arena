@@ -519,6 +519,45 @@ def load_florence2(chunk_size: int) -> TransformersVLMModel:
     return TransformersVLMModel(key="florence2", label="Florence-2-large", run_fn=run_fn)
 
 
+def load_lfm25_vl(chunk_size: int) -> TransformersVLMModel:
+    """LFM2.5-VL-1.6B — Liquid AI's 1.6B VLM (SigLIP2 + LFM2.5-1.2B, ~4 GB VRAM).
+
+    Requires transformers>=5.1. No native vLLM support.
+    """
+    import torch
+    from transformers import AutoProcessor, AutoModelForImageTextToText
+
+    model_name = "LiquidAI/LFM2.5-VL-1.6B"
+    processor = AutoProcessor.from_pretrained(model_name)
+    model = AutoModelForImageTextToText.from_pretrained(
+        model_name,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    ).eval()
+
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
+        content = [{"type": "image"} for _ in images] + [{"type": "text", "text": question}]
+        messages = [{"role": "user", "content": content}]
+        inputs = processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(model.device)
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+            )
+        generated = output_ids[:, inputs["input_ids"].shape[1]:]
+        return processor.decode(generated[0], skip_special_tokens=True).strip()
+
+    return TransformersVLMModel(key="lfm25_vl", label="LFM2.5-VL-1.6B", run_fn=run_fn)
+
+
 def load_glm46v_flash(chunk_size: int) -> VLMModel:
     """GLM-4.6V-Flash — 9B multimodal model (MIT license, 128K context)."""
     from vllm import LLM
@@ -649,6 +688,7 @@ MODEL_REGISTRY: dict[str, dict] = {
     "fastvlm_7b":   {"loader": load_fastvlm_7b,   "label": "FastVLM-7B"},
     "smolvlm2":     {"loader": load_smolvlm2,     "label": "SmolVLM2-2.2B"},
     "florence2":    {"loader": load_florence2,    "label": "Florence-2-large"},
+    "lfm25_vl":     {"loader": load_lfm25_vl,    "label": "LFM2.5-VL-1.6B"},
     "glm46v_flash": {"loader": load_glm46v_flash, "label": "GLM-4.6V-Flash"},
     "step3_vl":     {"loader": load_step3_vl,     "label": "STEP3-VL-10B"},
     "minicpm_v45":  {"loader": load_minicpm_v45,  "label": "MiniCPM-V-4.5"},
