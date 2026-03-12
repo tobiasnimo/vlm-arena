@@ -292,6 +292,36 @@ def load_qwen35_vl_4b(chunk_size: int) -> VLMModel:
     return VLMModel(key="qwen35_vl_4b", label="Qwen3.5-4B", llm=llm, build_fn=build)
 
 
+def load_qwen35_vl_9b(chunk_size: int) -> VLMModel:
+    """Qwen3.5-9B — same pipeline as Qwen3.5-0.8B, larger capacity."""
+    from vllm import LLM
+    from transformers import AutoProcessor
+
+    try:
+        from qwen_vl_utils import process_vision_info
+    except ImportError:
+        raise ImportError("Run: pip install qwen-vl-utils")
+
+    model_name = "Qwen/Qwen3.5-9B"
+    llm = LLM(
+        model=model_name,
+        max_model_len=8192,
+        max_num_seqs=2,
+        limit_mm_per_prompt={"image": chunk_size},
+        enforce_eager=True,
+    )
+    processor = AutoProcessor.from_pretrained(model_name)
+
+    def build(question: str, images: list):
+        placeholders = [{"type": "image", "image": img} for img in images]
+        messages = [{"role": "user", "content": [*placeholders, {"type": "text", "text": question}]}]
+        prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        image_data, _ = process_vision_info(messages)
+        return image_data, None
+
+    return VLMModel(key="qwen35_vl_9b", label="Qwen3.5-9B", llm=llm, build_fn=build)
+
+
 def load_minicpm_v4(chunk_size: int) -> VLMModel:
     """MiniCPM-V-4 — 4.1B multimodal model (SigLIP2-400M + MiniCPM4-3B)."""
     from vllm import LLM
@@ -609,6 +639,7 @@ MODEL_REGISTRY: dict[str, dict] = {
     "qwen35_vl":    {"loader": load_qwen35_vl,    "label": "Qwen3.5-0.8B"},
     "qwen35_vl_2b": {"loader": load_qwen35_vl_2b, "label": "Qwen3.5-2B"},
     "qwen35_vl_4b": {"loader": load_qwen35_vl_4b, "label": "Qwen3.5-4B"},
+    "qwen35_vl_9b": {"loader": load_qwen35_vl_9b, "label": "Qwen3.5-9B"},
     "minicpm_v4":   {"loader": load_minicpm_v4,   "label": "MiniCPM-V-4"},
     "llava_next":   {"loader": load_llava_next,   "label": "LLaVA-v1.6-Mistral"},
     "internvl2":    {"loader": load_internvl2,    "label": "InternVL2-8B"},
