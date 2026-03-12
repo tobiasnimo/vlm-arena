@@ -491,6 +491,7 @@ def load_florence2(chunk_size: int) -> TransformersVLMModel:
         trust_remote_code=True,
         torch_dtype=torch.float16,
         device_map="auto",
+        attn_implementation="eager",
     ).eval()
 
     TASK = "<DETAILED_CAPTION>"
