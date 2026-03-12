@@ -193,6 +193,7 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 | `qwen35_vl_2b`   | Qwen3.5-2B                | vLLM         | ~4 GB  |
 | `qwen35_vl_4b`   | Qwen3.5-4B                | vLLM         | ~8 GB  |
 | `minicpm_v4`     | MiniCPM-V-4               | vLLM         | ~10 GB |
+| `minicpm_v45`    | MiniCPM-V-4.5             | vLLM         | ~20 GB |
 | `llava_next`     | LLaVA-v1.6-Mistral-7B    | vLLM         | ~16 GB |
 | `internvl2`      | InternVL2-8B              | vLLM         | ~18 GB |
 | `deepseek_vl2`   | DeepSeek-VL2-Tiny         | vLLM         | ~8 GB  |
@@ -201,6 +202,9 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 | `fastvlm_7b`     | FastVLM-7B                | Transformers | ~16 GB |
 | `smolvlm2`       | SmolVLM2-2.2B-Instruct    | Transformers | ~5 GB  |
 | `florence2`      | Florence-2-large-ft       | Transformers | ~2 GB  |
+| `glm46v_flash`   | GLM-4.6V-Flash            | vLLM         | ~20 GB |
+| `step3_vl`       | STEP3-VL-10B              | vLLM         | ~24 GB |
+| `gemma3`         | Gemma-3-4B-IT             | vLLM         | ~10 GB |
 
 > **Note — Florence-2:** this model is task-token-driven (`<DETAILED_CAPTION>`), not chat-based. The video prompt is ignored; each frame is captioned independently and the captions are joined. Florence-2 has no native vLLM support in versions >0.9.1.
 

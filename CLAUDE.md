@@ -114,7 +114,7 @@ Always use `MOCK_INFERENCE=true` for local testing and schema/logic validation.
 
 ## Available model keys
 
-`phi3_v`, `qwen2_vl`, `qwen35_vl`, `qwen35_vl_2b`, `qwen35_vl_4b`, `minicpm_v4`, `llava_next`, `internvl2`, `deepseek_vl2`, `fastvlm_0b5`, `fastvlm`, `fastvlm_7b`, `smolvlm2`, `florence2`
+`phi3_v`, `qwen2_vl`, `qwen35_vl`, `qwen35_vl_2b`, `qwen35_vl_4b`, `minicpm_v4`, `minicpm_v45`, `llava_next`, `internvl2`, `deepseek_vl2`, `fastvlm_0b5`, `fastvlm`, `fastvlm_7b`, `smolvlm2`, `florence2`, `glm46v_flash`, `step3_vl`, `gemma3`
 
 Models backed by **Transformers** (not vLLM): `fastvlm_0b5`, `fastvlm`, `fastvlm_7b`, `smolvlm2`, `florence2` — these use `TransformersVLMModel` instead of `VLMModel`.
 

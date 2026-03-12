@@ -489,6 +489,118 @@ def load_florence2(chunk_size: int) -> TransformersVLMModel:
     return TransformersVLMModel(key="florence2", label="Florence-2-large", run_fn=run_fn)
 
 
+def load_glm46v_flash(chunk_size: int) -> VLMModel:
+    """GLM-4.6V-Flash — 9B multimodal model (MIT license, 128K context)."""
+    from vllm import LLM
+    from transformers import AutoProcessor
+
+    model_name = "zai-org/GLM-4.6V-Flash"
+    llm = LLM(
+        model=model_name,
+        trust_remote_code=True,
+        max_model_len=8192,
+        max_num_seqs=2,
+        limit_mm_per_prompt={"image": chunk_size},
+    )
+    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+
+    def build(question: str, images: list):
+        content = [{"type": "image", "image": img} for img in images]
+        content.append({"type": "text", "text": question})
+        messages = [{"role": "user", "content": content}]
+        prompt = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        return prompt, images, None
+
+    return VLMModel(key="glm46v_flash", label="GLM-4.6V-Flash", llm=llm, build_fn=build)
+
+
+def load_step3_vl(chunk_size: int) -> VLMModel:
+    """STEP3-VL-10B — 10B multimodal model (PE-lang 1.8B + Qwen3-8B)."""
+    from vllm import LLM
+    from transformers import AutoProcessor
+
+    model_name = "stepfun-ai/Step3-VL-10B"
+    llm = LLM(
+        model=model_name,
+        trust_remote_code=True,
+        max_model_len=4096,
+        max_num_seqs=2,
+        limit_mm_per_prompt={"image": chunk_size},
+        hf_overrides={"vision_config": {"enable_patch": False}},
+    )
+    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+
+    def build(question: str, images: list):
+        content = [{"type": "image", "image": img} for img in images]
+        content.append({"type": "text", "text": question})
+        messages = [{"role": "user", "content": content}]
+        prompt = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        return prompt, images, None
+
+    return VLMModel(key="step3_vl", label="STEP3-VL-10B", llm=llm, build_fn=build)
+
+
+def load_minicpm_v45(chunk_size: int) -> VLMModel:
+    """MiniCPM-V-4.5 — 8.7B multimodal model (SigLIP2-400M + Qwen3-8B)."""
+    from vllm import LLM
+    from transformers import AutoTokenizer
+
+    model_name = "openbmb/MiniCPM-V-4_5"
+    llm = LLM(
+        model=model_name,
+        trust_remote_code=True,
+        max_model_len=4096,
+        max_num_seqs=2,
+        limit_mm_per_prompt={"image": chunk_size},
+        enforce_eager=True,
+        disable_mm_preprocessor_cache=True,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+
+    stop_tokens = ["<|im_end|>", "<|endoftext|>"]
+    stop_token_ids = [tokenizer.convert_tokens_to_ids(t) for t in stop_tokens]
+
+    def build(question: str, images: list):
+        placeholders = "".join("(<image>./</image>)\n" for _ in images)
+        messages = [{"role": "user", "content": f"{placeholders}{question}"}]
+        prompt = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        return prompt, images, stop_token_ids
+
+    return VLMModel(key="minicpm_v45", label="MiniCPM-V-4.5", llm=llm, build_fn=build)
+
+
+def load_gemma3(chunk_size: int) -> VLMModel:
+    """Gemma-3-4B-IT — Google's 4B multimodal model."""
+    from vllm import LLM
+    from transformers import AutoProcessor
+
+    model_name = "google/gemma-3-4b-it"
+    llm = LLM(
+        model=model_name,
+        max_model_len=8192,
+        max_num_seqs=2,
+        limit_mm_per_prompt={"image": chunk_size},
+    )
+    processor = AutoProcessor.from_pretrained(model_name)
+
+    def build(question: str, images: list):
+        content = [{"type": "image", "image": img} for img in images]
+        content.append({"type": "text", "text": question})
+        messages = [{"role": "user", "content": content}]
+        prompt = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        return prompt, images, [1, 106]
+
+    return VLMModel(key="gemma3", label="Gemma-3-4B-IT", llm=llm, build_fn=build)
+
+
 # ── Model registry ────────────────────────────────────────────────────────────
 
 MODEL_REGISTRY: dict[str, dict] = {
@@ -506,6 +618,10 @@ MODEL_REGISTRY: dict[str, dict] = {
     "fastvlm_7b":   {"loader": load_fastvlm_7b,   "label": "FastVLM-7B"},
     "smolvlm2":     {"loader": load_smolvlm2,     "label": "SmolVLM2-2.2B"},
     "florence2":    {"loader": load_florence2,    "label": "Florence-2-large"},
+    "glm46v_flash": {"loader": load_glm46v_flash, "label": "GLM-4.6V-Flash"},
+    "step3_vl":     {"loader": load_step3_vl,     "label": "STEP3-VL-10B"},
+    "minicpm_v45":  {"loader": load_minicpm_v45,  "label": "MiniCPM-V-4.5"},
+    "gemma3":       {"loader": load_gemma3,        "label": "Gemma-3-4B-IT"},
 }
 
 

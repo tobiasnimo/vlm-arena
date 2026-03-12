@@ -2,7 +2,7 @@
 
 [**UCF-Crime Dataset**](https://www.crcv.ucf.edu/research/real-world-anomaly-detection-in-surveillance-videos/) is a large-scale real-world surveillance video dataset containing anomaly events such as road accidents, robbery, and shooting, as well as normal (no crime) footage
 
-I used a preprocessed **subset of this dataset as input for **vlm-arena**.
+I used a preprocessed **subset of this dataset as input for vlm-arena**.
 
 ## Source Data
 
