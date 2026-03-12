@@ -538,7 +538,7 @@ def load_lfm25_vl(chunk_size: int) -> TransformersVLMModel:
     ).eval()
 
     def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
-        content = [{"type": "image"} for _ in images] + [{"type": "text", "text": question}]
+        content = [{"type": "image", "image": img} for img in images] + [{"type": "text", "text": question}]
         messages = [{"role": "user", "content": content}]
         inputs = processor.apply_chat_template(
             messages,
