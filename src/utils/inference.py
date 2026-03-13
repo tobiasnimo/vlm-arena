@@ -573,7 +573,7 @@ def load_glm46v_flash(chunk_size: int) -> VLMModel:
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
     )
-    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(model_name)
 
     def build(question: str, images: list):
         content = [{"type": "image", "image": img} for img in images]
