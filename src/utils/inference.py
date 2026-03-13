@@ -648,7 +648,12 @@ def load_minicpm_v45(chunk_size: int) -> TransformersVLMModel:
         trust_remote_code=True,
         attn_implementation="sdpa",
         torch_dtype=torch.bfloat16,
-    ).eval().cuda()
+    )
+    # Patch: MiniCPMV custom code references all_tied_weights_keys which was
+    # removed in transformers 5.x.
+    if not hasattr(model, "all_tied_weights_keys"):
+        model.all_tied_weights_keys = []
+    model = model.eval().cuda()
 
     def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
         content = list(images) + [question]
