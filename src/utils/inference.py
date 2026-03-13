@@ -796,6 +796,7 @@ def load_gemma3_12b(chunk_size: int) -> VLMModel:
         max_model_len=8192,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
+        hf_overrides={"rope_scaling": {"rope_type": "linear", "factor": 1.0}},
     )
     processor = AutoProcessor.from_pretrained(model_name)
 
