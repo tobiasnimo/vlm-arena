@@ -759,6 +759,18 @@ def load_phi4_vision(chunk_size: int) -> TransformersVLMModel:
     return TransformersVLMModel(key="phi4_vision", label="Phi-4-Reasoning-Vision-15B", run_fn=run_fn)
 
 
+def _fix_gemma_rope(cfg):
+    """Patch Gemma rope_scaling with rope_type before vLLM validates it.
+
+    Google's updated config.json removed the rope_type key that vLLM requires.
+    """
+    if hasattr(cfg, "text_config") and getattr(cfg.text_config, "rope_scaling", None):
+        cfg.text_config.rope_scaling.setdefault("rope_type", "linear")
+    if getattr(cfg, "rope_scaling", None):
+        cfg.rope_scaling.setdefault("rope_type", "linear")
+    return cfg
+
+
 def load_gemma3(chunk_size: int) -> VLMModel:
     """Gemma-3-4B-IT — Google's 4B multimodal model."""
     from vllm import LLM
@@ -770,6 +782,7 @@ def load_gemma3(chunk_size: int) -> VLMModel:
         max_model_len=8192,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
+        hf_overrides=_fix_gemma_rope,
     )
     processor = AutoProcessor.from_pretrained(model_name)
 
@@ -791,21 +804,12 @@ def load_gemma3_12b(chunk_size: int) -> VLMModel:
     from transformers import AutoProcessor
 
     model_name = "google/gemma-3-12b-it"
-
-    def _fix_rope(cfg):
-        """Patch rope_scaling with rope_type before vLLM validates it."""
-        if hasattr(cfg, "text_config") and getattr(cfg.text_config, "rope_scaling", None):
-            cfg.text_config.rope_scaling.setdefault("rope_type", "linear")
-        if getattr(cfg, "rope_scaling", None):
-            cfg.rope_scaling.setdefault("rope_type", "linear")
-        return cfg
-
     llm = LLM(
         model=model_name,
         max_model_len=8192,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
-        hf_overrides=_fix_rope,
+        hf_overrides=_fix_gemma_rope,
     )
     processor = AutoProcessor.from_pretrained(model_name)
 
