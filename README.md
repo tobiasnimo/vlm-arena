@@ -263,50 +263,43 @@ Set `MOCK_INFERENCE=true` in `.env`. Models will not be loaded; a placeholder an
 
 ## Troubleshooting
 
-**CUDA out of memory**
-→ Reduce `max_model_len` in the relevant loader in `inference.py`, or use a smaller model (`deepseek_vl2` is the lightest).
+- **CUDA out of memory** → Reduce `max_model_len` in the relevant loader in `inference.py`, or use a smaller model (`deepseek_vl2` is the lightest).
 
-**`trust_remote_code` errors**
-→ Set automatically for Phi-3.5 and InternVL2. Accept the model license on Hugging Face first.
+- **`trust_remote_code` errors** → Set automatically for Phi-3.5 and InternVL2. Accept the model license on Hugging Face first.
 
-**`qwen_vl_utils` not found**
-→ `pip install qwen-vl-utils`
+- **`qwen_vl_utils` not found** → `pip install qwen-vl-utils`
 
-**vLLM hangs on startup**
-→ Normal — vLLM compiles CUDA kernels on first run. Wait 60–90 seconds.
+- **vLLM hangs on startup** → Normal — vLLM compiles CUDA kernels on first run. Wait 60–90 seconds.
 
-**Model downloads are slow**
-→ Models are cached in `~/.cache/huggingface/hub`. On SageMaker, preload to an EFS mount to avoid re-downloading across sessions.
+- **Model downloads are slow** → Models are cached in `~/.cache/huggingface/hub`. On SageMaker, preload to an EFS mount to avoid re-downloading across sessions.
 
-**`CUBLAS_STATUS_INVALID_VALUE` on SageMaker / CUDA 12.9**
-→ vLLM 0.17.0 ships with a cuBLAS version that has a broken mixed-precision GEMM on CUDA 12.9. Try the following steps in order:
+- **`CUBLAS_STATUS_INVALID_VALUE` on SageMaker / CUDA 12.9** → vLLM 0.17.0 ships with a cuBLAS version that has a broken mixed-precision GEMM on CUDA 12.9. Try the following steps in order:
 
-1. **Unset `LD_LIBRARY_PATH`** before running — SageMaker containers set it to host CUDA paths which override the venv's pinned cuBLAS:
-   ```bash
-   unset LD_LIBRARY_PATH
-   python src/arena.py
-   ```
-   This is the most common fix and requires no package changes.
+    1. **Unset `LD_LIBRARY_PATH`** before running — SageMaker containers set it to host CUDA paths which override the venv's pinned cuBLAS:
+       ```bash
+       unset LD_LIBRARY_PATH
+       python src/arena.py
+       ```
+       This is the most common fix and requires no package changes.
 
-2. **Upgrade cuBLAS** to the version that ships with CUDA 12.9:
-   ```bash
-   pip install nvidia-cublas-cu12==12.9.1.4
-   python src/arena.py
-   ```
+    2. **Upgrade cuBLAS** to the version that ships with CUDA 12.9:
+       ```bash
+       pip install nvidia-cublas-cu12==12.9.1.4
+       python src/arena.py
+       ```
 
-3. **Reinstall vLLM with CUDA 12.9 wheels** (most thorough fix):
-   ```bash
-   pip install vllm --extra-index-url https://download.pytorch.org/whl/cu129
-   ```
+    3. **Reinstall vLLM with CUDA 12.9 wheels** (most thorough fix):
+       ```bash
+       pip install vllm --extra-index-url https://download.pytorch.org/whl/cu129
+       ```
 
-> **Note:** If you also see the error during vLLM's vision encoder profiling pass (before inference starts), comment out `enforce_eager=True` from the relevant loader in `inference.py` — it can conflict with certain model architectures.
+    > **Note:** If you also see the error during vLLM's vision encoder profiling pass (before inference starts), comment out `enforce_eager=True` from the relevant loader in `inference.py` — it can conflict with certain model architectures.
 
-**Disk full on SageMaker**
-→ HuggingFace model downloads can fill up the root volume. Clear the cache and check disk usage:
+- **Disk full on SageMaker** → HuggingFace model downloads can fill up the root volume. Clear the cache and check disk usage:
 
-```bash
-rm -rf ~/.cache/huggingface
-df -h
-```
+    ```bash
+    rm -rf ~/.cache/huggingface
+    df -h
+    ```
 
-> **Tip:** Set `HF_HOME` in `.env` to point to a larger volume (e.g. an attached EFS or EBS mount) so the cache doesn't fill the root disk.
+    > **Tip:** Set `HF_HOME` in `.env` to point to a larger volume (e.g. an attached EFS or EBS mount) so the cache doesn't fill the root disk.
