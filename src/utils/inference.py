@@ -643,17 +643,17 @@ def load_minicpm_v45(chunk_size: int) -> TransformersVLMModel:
 
     model_name = "openbmb/MiniCPM-V-4_5"
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    # Patch: MiniCPMV custom code references all_tied_weights_keys which was
+    # removed in transformers 5.x. Must patch the class before from_pretrained.
+    from transformers import PreTrainedModel
+    if not hasattr(PreTrainedModel, "all_tied_weights_keys"):
+        PreTrainedModel.all_tied_weights_keys = []
     model = AutoModel.from_pretrained(
         model_name,
         trust_remote_code=True,
         attn_implementation="sdpa",
         torch_dtype=torch.bfloat16,
-    )
-    # Patch: MiniCPMV custom code references all_tied_weights_keys which was
-    # removed in transformers 5.x.
-    if not hasattr(model, "all_tied_weights_keys"):
-        model.all_tied_weights_keys = []
-    model = model.eval().cuda()
+    ).eval().cuda()
 
     def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
         content = list(images) + [question]
