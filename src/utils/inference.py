@@ -560,31 +560,47 @@ def load_lfm25_vl(chunk_size: int) -> TransformersVLMModel:
     return TransformersVLMModel(key="lfm25_vl", label="LFM2.5-VL-1.6B", run_fn=run_fn)
 
 
-def load_glm46v_flash(chunk_size: int) -> VLMModel:
-    """GLM-4.6V-Flash — 9B multimodal model (MIT license, 128K context)."""
-    from vllm import LLM
-    from transformers import AutoProcessor
+def load_glm46v_flash(chunk_size: int) -> TransformersVLMModel:
+    """GLM-4.6V-Flash — 9B multimodal model (MIT license, 128K context).
+
+    Switched from vLLM to Transformers backend because the model's custom
+    tokenizer backend doesn't implement all_special_tokens_extended, which
+    vLLM requires during model loading.
+    """
+    import torch
+    from transformers import AutoProcessor, Glm4vForConditionalGeneration
 
     model_name = "zai-org/GLM-4.6V-Flash"
-    llm = LLM(
-        model=model_name,
-        trust_remote_code=True,
-        max_model_len=8192,
-        max_num_seqs=2,
-        limit_mm_per_prompt={"image": chunk_size},
-    )
     processor = AutoProcessor.from_pretrained(model_name)
+    model = Glm4vForConditionalGeneration.from_pretrained(
+        model_name,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    ).eval()
 
-    def build(question: str, images: list):
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
         content = [{"type": "image", "image": img} for img in images]
         content.append({"type": "text", "text": question})
         messages = [{"role": "user", "content": content}]
-        prompt = processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        return prompt, images, None
+        inputs = processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(model.device)
+        inputs.pop("token_type_ids", None)
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+            )
+        generated = output_ids[:, inputs["input_ids"].shape[1]:]
+        return processor.decode(generated[0], skip_special_tokens=True).strip()
 
-    return VLMModel(key="glm46v_flash", label="GLM-4.6V-Flash", llm=llm, build_fn=build)
+    return TransformersVLMModel(key="glm46v_flash", label="GLM-4.6V-Flash", run_fn=run_fn)
 
 
 def load_step3_vl(chunk_size: int) -> VLMModel:

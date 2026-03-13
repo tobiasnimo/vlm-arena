@@ -204,7 +204,7 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 | `smolvlm2`       | SmolVLM2-2.2B-Instruct    | Transformers | ~5 GB  |
 | `florence2`      | Florence-2-large-ft       | Transformers | ~2 GB  |
 | `lfm25_vl`       | LFM2.5-VL-1.6B            | Transformers | ~4 GB  |
-| `glm46v_flash`   | GLM-4.6V-Flash            | vLLM         | ~20 GB |
+| `glm46v_flash`   | GLM-4.6V-Flash            | Transformers | ~20 GB |
 | `step3_vl`       | STEP3-VL-10B              | vLLM         | ~24 GB |
 | `gemma3`         | Gemma-3-4B-IT             | vLLM         | ~10 GB |
 | `phi4_vision`    | Phi-4-Reasoning-Vision-15B | Transformers | ~32 GB |
