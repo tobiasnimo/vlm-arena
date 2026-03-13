@@ -207,6 +207,7 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 | `glm46v_flash`   | GLM-4.6V-Flash            | vLLM         | ~20 GB |
 | `step3_vl`       | STEP3-VL-10B              | vLLM         | ~24 GB |
 | `gemma3`         | Gemma-3-4B-IT             | vLLM         | ~10 GB |
+| `phi4_vision`    | Phi-4-Reasoning-Vision-15B | Transformers | ~32 GB |
 
 > **Note — Florence-2:** this model is task-token-driven (`<DETAILED_CAPTION>`), not chat-based. The video prompt is ignored; each frame is captioned independently and the captions are joined. Florence-2 has no native vLLM support in versions >0.9.1.
 

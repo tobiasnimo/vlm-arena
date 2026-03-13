@@ -646,6 +646,45 @@ def load_minicpm_v45(chunk_size: int) -> VLMModel:
     return VLMModel(key="minicpm_v45", label="MiniCPM-V-4.5", llm=llm, build_fn=build)
 
 
+def load_phi4_vision(chunk_size: int) -> TransformersVLMModel:
+    """Phi-4-Reasoning-Vision-15B — Microsoft's 15B reasoning VLM (SigLIP-2 + Phi-4, ~32 GB VRAM).
+
+    Uses <image> placeholder tokens. Requires transformers with trust_remote_code.
+    """
+    import torch
+    from transformers import AutoProcessor, AutoModelForCausalLM
+
+    model_name = "microsoft/Phi-4-reasoning-vision-15B"
+    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    ).eval()
+
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
+        image_placeholders = "\n".join("<image>" for _ in images)
+        messages = [{"role": "user", "content": f"{image_placeholders}\n{question}"}]
+        prompt = processor.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        device = next(model.parameters()).device
+        inputs = processor(text=prompt, images=images, return_tensors="pt").to(device)
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                eos_token_id=processor.tokenizer.eos_token_id,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+            )
+        generated = output_ids[:, inputs["input_ids"].shape[1]:]
+        return processor.tokenizer.decode(generated[0], skip_special_tokens=True).strip()
+
+    return TransformersVLMModel(key="phi4_vision", label="Phi-4-Reasoning-Vision-15B", run_fn=run_fn)
+
+
 def load_gemma3(chunk_size: int) -> VLMModel:
     """Gemma-3-4B-IT — Google's 4B multimodal model."""
     from vllm import LLM
@@ -695,6 +734,7 @@ MODEL_REGISTRY: dict[str, dict] = {
     "step3_vl":     {"loader": load_step3_vl,     "label": "STEP3-VL-10B"},
     "minicpm_v45":  {"loader": load_minicpm_v45,  "label": "MiniCPM-V-4.5"},
     "gemma3":       {"loader": load_gemma3,        "label": "Gemma-3-4B-IT"},
+    "phi4_vision":  {"loader": load_phi4_vision,   "label": "Phi-4-Reasoning-Vision-15B"},
 }
 
 
