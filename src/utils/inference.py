@@ -647,7 +647,7 @@ def load_minicpm_v45(chunk_size: int) -> TransformersVLMModel:
     # removed in transformers 5.x. Must patch the class before from_pretrained.
     from transformers import PreTrainedModel
     if not hasattr(PreTrainedModel, "all_tied_weights_keys"):
-        PreTrainedModel.all_tied_weights_keys = []
+        PreTrainedModel.all_tied_weights_keys = {}
     model = AutoModel.from_pretrained(
         model_name,
         trust_remote_code=True,
