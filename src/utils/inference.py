@@ -646,6 +646,56 @@ def load_minicpm_v45(chunk_size: int) -> VLMModel:
     return VLMModel(key="minicpm_v45", label="MiniCPM-V-4.5", llm=llm, build_fn=build)
 
 
+def _load_cosmos_reason2(model_name: str, key: str, label: str) -> TransformersVLMModel:
+    """Shared loader for Cosmos-Reason2 variants (2B, 8B).
+
+    Based on Qwen3-VL architecture. Supports image and video input.
+    """
+    import torch
+    from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
+
+    model = Qwen3VLForConditionalGeneration.from_pretrained(
+        model_name,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        attn_implementation="sdpa",
+    ).eval()
+    processor = AutoProcessor.from_pretrained(model_name)
+
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
+        content = [{"type": "image", "image": img} for img in images]
+        content.append({"type": "text", "text": question})
+        messages = [{"role": "user", "content": content}]
+        inputs = processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(model.device)
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+            )
+        generated = output_ids[:, inputs["input_ids"].shape[1]:]
+        return processor.batch_decode(generated, skip_special_tokens=True)[0].strip()
+
+    return TransformersVLMModel(key=key, label=label, run_fn=run_fn)
+
+
+def load_cosmos_reason2_2b(chunk_size: int) -> TransformersVLMModel:
+    """Cosmos-Reason2-2B — NVIDIA's 2B physical AI reasoning VLM (~24 GB VRAM)."""
+    return _load_cosmos_reason2("nvidia/Cosmos-Reason2-2B", "cosmos_reason2_2b", "Cosmos-Reason2-2B")
+
+
+def load_cosmos_reason2_8b(chunk_size: int) -> TransformersVLMModel:
+    """Cosmos-Reason2-8B — NVIDIA's 8B physical AI reasoning VLM (~32 GB VRAM)."""
+    return _load_cosmos_reason2("nvidia/Cosmos-Reason2-8B", "cosmos_reason2_8b", "Cosmos-Reason2-8B")
+
+
 def load_phi4_vision(chunk_size: int) -> TransformersVLMModel:
     """Phi-4-Reasoning-Vision-15B — Microsoft's 15B reasoning VLM (SigLIP-2 + Phi-4, ~32 GB VRAM).
 
@@ -735,6 +785,8 @@ MODEL_REGISTRY: dict[str, dict] = {
     "minicpm_v45":  {"loader": load_minicpm_v45,  "label": "MiniCPM-V-4.5"},
     "gemma3":       {"loader": load_gemma3,        "label": "Gemma-3-4B-IT"},
     "phi4_vision":  {"loader": load_phi4_vision,   "label": "Phi-4-Reasoning-Vision-15B"},
+    "cosmos_reason2_2b": {"loader": load_cosmos_reason2_2b, "label": "Cosmos-Reason2-2B"},
+    "cosmos_reason2_8b": {"loader": load_cosmos_reason2_8b, "label": "Cosmos-Reason2-8B"},
 }
 
 
