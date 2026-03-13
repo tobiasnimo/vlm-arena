@@ -631,35 +631,38 @@ def load_step3_vl(chunk_size: int) -> VLMModel:
     return VLMModel(key="step3_vl", label="STEP3-VL-10B", llm=llm, build_fn=build)
 
 
-def load_minicpm_v45(chunk_size: int) -> VLMModel:
-    """MiniCPM-V-4.5 — 8.7B multimodal model (SigLIP2-400M + Qwen3-8B)."""
-    from vllm import LLM
-    from transformers import AutoTokenizer
+def load_minicpm_v45(chunk_size: int) -> TransformersVLMModel:
+    """MiniCPM-V-4.5 — 8.7B multimodal model (SigLIP2-400M + Qwen3-8B).
+
+    Switched from vLLM to Transformers because the model's custom tokenizer
+    doesn't implement all_special_tokens_extended. Uses the model's built-in
+    .chat() API which handles image encoding internally.
+    """
+    import torch
+    from transformers import AutoModel, AutoTokenizer
 
     model_name = "openbmb/MiniCPM-V-4_5"
-    llm = LLM(
-        model=model_name,
-        trust_remote_code=True,
-        max_model_len=4096,
-        max_num_seqs=2,
-        limit_mm_per_prompt={"image": chunk_size},
-        enforce_eager=True,
-        disable_mm_preprocessor_cache=True,
-    )
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModel.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+        attn_implementation="sdpa",
+        torch_dtype=torch.bfloat16,
+    ).eval().cuda()
 
-    stop_tokens = ["<|im_end|>", "<|endoftext|>"]
-    stop_token_ids = [tokenizer.convert_tokens_to_ids(t) for t in stop_tokens]
-
-    def build(question: str, images: list):
-        placeholders = "".join("(<image>./</image>)\n" for _ in images)
-        messages = [{"role": "user", "content": f"{placeholders}{question}"}]
-        prompt = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
+        content = list(images) + [question]
+        msgs = [{"role": "user", "content": content}]
+        answer = model.chat(
+            msgs=msgs,
+            tokenizer=tokenizer,
+            max_new_tokens=max_tokens,
+            do_sample=temperature > 0,
+            temperature=temperature if temperature > 0 else None,
         )
-        return prompt, images, stop_token_ids
+        return answer.strip()
 
-    return VLMModel(key="minicpm_v45", label="MiniCPM-V-4.5", llm=llm, build_fn=build)
+    return TransformersVLMModel(key="minicpm_v45", label="MiniCPM-V-4.5", run_fn=run_fn)
 
 
 def _load_cosmos_reason2(model_name: str, key: str, label: str) -> TransformersVLMModel:

@@ -194,7 +194,7 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 | `qwen35_vl_4b`   | Qwen3.5-4B                | vLLM         | ~8 GB  |
 | `qwen35_vl_9b`   | Qwen3.5-9B                | vLLM         | ~20 GB |
 | `minicpm_v4`     | MiniCPM-V-4               | vLLM         | ~10 GB |
-| `minicpm_v45`    | MiniCPM-V-4.5             | vLLM         | ~20 GB |
+| `minicpm_v45`    | MiniCPM-V-4.5             | Transformers | ~20 GB |
 | `llava_next`     | LLaVA-v1.6-Mistral-7B    | vLLM         | ~16 GB |
 | `internvl2`      | InternVL2-8B              | vLLM         | ~18 GB |
 | `deepseek_vl2`   | DeepSeek-VL2-Tiny         | vLLM         | ~8 GB  |
