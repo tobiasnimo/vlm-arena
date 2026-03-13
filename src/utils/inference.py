@@ -16,6 +16,23 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# ── vLLM / transformers v5 compatibility patch ────────────────────────────────
+# vLLM's get_cached_tokenizer accesses tokenizer.all_special_tokens_extended,
+# which was removed in transformers v5.  Monkey-patch so vLLM models can load.
+try:
+    import vllm.transformers_utils.tokenizer as _vllm_tok
+
+    _original_get_cached_tokenizer = _vllm_tok.get_cached_tokenizer
+
+    def _patched_get_cached_tokenizer(tokenizer):
+        if not hasattr(tokenizer, "all_special_tokens_extended"):
+            tokenizer.all_special_tokens_extended = tokenizer.all_special_tokens
+        return _original_get_cached_tokenizer(tokenizer)
+
+    _vllm_tok.get_cached_tokenizer = _patched_get_cached_tokenizer
+except ImportError:
+    pass  # vLLM not installed — Transformers-only models still work
+
 DEFAULT_MAX_TOKENS = 512
 DEFAULT_TEMPERATURE = 0.2
 
