@@ -791,12 +791,21 @@ def load_gemma3_12b(chunk_size: int) -> VLMModel:
     from transformers import AutoProcessor
 
     model_name = "google/gemma-3-12b-it"
+
+    def _fix_rope(cfg):
+        """Patch rope_scaling with rope_type before vLLM validates it."""
+        if hasattr(cfg, "text_config") and getattr(cfg.text_config, "rope_scaling", None):
+            cfg.text_config.rope_scaling.setdefault("rope_type", "linear")
+        if getattr(cfg, "rope_scaling", None):
+            cfg.rope_scaling.setdefault("rope_type", "linear")
+        return cfg
+
     llm = LLM(
         model=model_name,
         max_model_len=8192,
         max_num_seqs=2,
         limit_mm_per_prompt={"image": chunk_size},
-        hf_overrides={"rope_scaling": {"rope_type": "linear", "factor": 1.0}},
+        hf_overrides=_fix_rope,
     )
     processor = AutoProcessor.from_pretrained(model_name)
 
