@@ -226,10 +226,10 @@ def _load_qwen35_vl(model_name: str, key: str, label: str) -> TransformersVLMMod
     Qwen3_5ForConditionalGeneration architecture yet.
     """
     import torch
-    from transformers import AutoModelForCausalLM, AutoProcessor
+    from transformers import AutoModelForImageTextToText, AutoProcessor
 
     processor = AutoProcessor.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForImageTextToText.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
         device_map="auto",
