@@ -776,70 +776,55 @@ def load_phi4_vision(chunk_size: int) -> TransformersVLMModel:
     return TransformersVLMModel(key="phi4_vision", label="Phi-4-Reasoning-Vision-15B", run_fn=run_fn)
 
 
-def _fix_gemma_rope(cfg):
-    """Patch Gemma rope_scaling with rope_type before vLLM validates it.
+def _load_gemma3(model_name: str, key: str, label: str) -> TransformersVLMModel:
+    """Shared loader for Gemma-3 variants.
 
-    Google's updated config.json removed the rope_type key that vLLM requires.
+    Switched from vLLM to Transformers because vLLM doesn't support
+    transformers v5 yet (rope_scaling, rope_local_base_freq, and
+    all_special_tokens_extended incompatibilities).
     """
-    if hasattr(cfg, "text_config") and getattr(cfg.text_config, "rope_scaling", None):
-        cfg.text_config.rope_scaling.setdefault("rope_type", "linear")
-    if getattr(cfg, "rope_scaling", None):
-        cfg.rope_scaling.setdefault("rope_type", "linear")
-    return cfg
+    import torch
+    from transformers import AutoProcessor, Gemma3ForConditionalGeneration
 
-
-def load_gemma3(chunk_size: int) -> VLMModel:
-    """Gemma-3-4B-IT — Google's 4B multimodal model."""
-    from vllm import LLM
-    from transformers import AutoProcessor
-
-    model_name = "google/gemma-3-4b-it"
-    llm = LLM(
-        model=model_name,
-        max_model_len=8192,
-        max_num_seqs=2,
-        limit_mm_per_prompt={"image": chunk_size},
-        hf_overrides=_fix_gemma_rope,
-    )
     processor = AutoProcessor.from_pretrained(model_name)
+    model = Gemma3ForConditionalGeneration.from_pretrained(
+        model_name,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    ).eval()
 
-    def build(question: str, images: list):
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
         content = [{"type": "image", "image": img} for img in images]
         content.append({"type": "text", "text": question})
         messages = [{"role": "user", "content": content}]
-        prompt = processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        return prompt, images, [1, 106]
+        inputs = processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(model.device)
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+            )
+        generated = output_ids[:, inputs["input_ids"].shape[1]:]
+        return processor.decode(generated[0], skip_special_tokens=True).strip()
 
-    return VLMModel(key="gemma3", label="Gemma-3-4B-IT", llm=llm, build_fn=build)
+    return TransformersVLMModel(key=key, label=label, run_fn=run_fn)
 
 
-def load_gemma3_12b(chunk_size: int) -> VLMModel:
-    """Gemma-3-12B-IT — Google's 12B multimodal model."""
-    from vllm import LLM
-    from transformers import AutoProcessor
+def load_gemma3(chunk_size: int) -> TransformersVLMModel:
+    """Gemma-3-4B-IT — Google's 4B multimodal model (~10 GB VRAM)."""
+    return _load_gemma3("google/gemma-3-4b-it", "gemma3", "Gemma-3-4B-IT")
 
-    model_name = "google/gemma-3-12b-it"
-    llm = LLM(
-        model=model_name,
-        max_model_len=8192,
-        max_num_seqs=2,
-        limit_mm_per_prompt={"image": chunk_size},
-        hf_overrides=_fix_gemma_rope,
-    )
-    processor = AutoProcessor.from_pretrained(model_name)
 
-    def build(question: str, images: list):
-        content = [{"type": "image", "image": img} for img in images]
-        content.append({"type": "text", "text": question})
-        messages = [{"role": "user", "content": content}]
-        prompt = processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        return prompt, images, [1, 106]
-
-    return VLMModel(key="gemma3_12b", label="Gemma-3-12B-IT", llm=llm, build_fn=build)
+def load_gemma3_12b(chunk_size: int) -> TransformersVLMModel:
+    """Gemma-3-12B-IT — Google's 12B multimodal model (~28 GB VRAM)."""
+    return _load_gemma3("google/gemma-3-12b-it", "gemma3_12b", "Gemma-3-12B-IT")
 
 
 # ── Model registry ────────────────────────────────────────────────────────────
