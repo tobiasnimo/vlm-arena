@@ -703,12 +703,12 @@ def _load_cosmos_reason2(model_name: str, key: str, label: str) -> TransformersV
 
 
 def load_cosmos_reason2_2b(chunk_size: int) -> TransformersVLMModel:
-    """Cosmos-Reason2-2B — NVIDIA's 2B physical AI reasoning VLM (~24 GB VRAM)."""
+    """Cosmos-Reason2-2B — NVIDIA's 2B physical AI reasoning VLM (~6 GB VRAM)."""
     return _load_cosmos_reason2("nvidia/Cosmos-Reason2-2B", "cosmos_reason2_2b", "Cosmos-Reason2-2B")
 
 
 def load_cosmos_reason2_8b(chunk_size: int) -> TransformersVLMModel:
-    """Cosmos-Reason2-8B — NVIDIA's 8B physical AI reasoning VLM (~32 GB VRAM)."""
+    """Cosmos-Reason2-8B — NVIDIA's 8B physical AI reasoning VLM (~20 GB VRAM)."""
     return _load_cosmos_reason2("nvidia/Cosmos-Reason2-8B", "cosmos_reason2_8b", "Cosmos-Reason2-8B")
 
 

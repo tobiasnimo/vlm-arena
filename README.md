@@ -209,8 +209,8 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 | `gemma3`         | Gemma-3-4B-IT             | vLLM         | ~10 GB |
 | `gemma3_12b`     | Gemma-3-12B-IT            | vLLM         | ~28 GB |
 | `phi4_vision`    | Phi-4-Reasoning-Vision-15B | Transformers | ~32 GB |
-| `cosmos_reason2_2b` | Cosmos-Reason2-2B      | Transformers | ~24 GB |
-| `cosmos_reason2_8b` | Cosmos-Reason2-8B      | Transformers | ~32 GB |
+| `cosmos_reason2_2b` | Cosmos-Reason2-2B      | Transformers | ~6 GB  |
+| `cosmos_reason2_8b` | Cosmos-Reason2-8B      | Transformers | ~20 GB |
 
 > **Note — Florence-2:** this model is task-token-driven (`<DETAILED_CAPTION>`), not chat-based. The video prompt is ignored; each frame is captioned independently and the captions are joined. Florence-2 has no native vLLM support in versions >0.9.1.
 
