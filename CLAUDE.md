@@ -114,7 +114,7 @@ Always use `MOCK_INFERENCE=true` for local testing and schema/logic validation.
 
 ## Available model keys
 
-`phi3_v`, `qwen2_vl`, `qwen35_vl`, `qwen35_vl_2b`, `qwen35_vl_4b`, `qwen35_vl_9b`, `minicpm_v4`, `minicpm_v45`, `llava_next`, `internvl2`, `deepseek_vl2`, `fastvlm_0b5`, `fastvlm`, `fastvlm_7b`, `smolvlm2`, `florence2`, `lfm25_vl`, `glm46v_flash`, `step3_vl`, `gemma3`, `phi4_vision`, `cosmos_reason2_2b`, `cosmos_reason2_8b`
+`phi3_v`, `qwen2_vl`, `qwen35_vl`, `qwen35_vl_2b`, `qwen35_vl_4b`, `qwen35_vl_9b`, `minicpm_v4`, `minicpm_v45`, `llava_next`, `internvl2`, `deepseek_vl2`, `fastvlm_0b5`, `fastvlm`, `fastvlm_7b`, `smolvlm2`, `florence2`, `lfm25_vl`, `glm46v_flash`, `step3_vl`, `gemma3`, `gemma3_12b`, `phi4_vision`, `cosmos_reason2_2b`, `cosmos_reason2_8b`
 
 Models backed by **Transformers** (not vLLM): `fastvlm_0b5`, `fastvlm`, `fastvlm_7b`, `smolvlm2`, `florence2`, `lfm25_vl`, `phi4_vision`, `cosmos_reason2_2b`, `cosmos_reason2_8b`, `glm46v_flash` — these use `TransformersVLMModel` instead of `VLMModel`.
 

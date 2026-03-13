@@ -777,6 +777,32 @@ def load_gemma3(chunk_size: int) -> VLMModel:
     return VLMModel(key="gemma3", label="Gemma-3-4B-IT", llm=llm, build_fn=build)
 
 
+def load_gemma3_12b(chunk_size: int) -> VLMModel:
+    """Gemma-3-12B-IT — Google's 12B multimodal model."""
+    from vllm import LLM
+    from transformers import AutoProcessor
+
+    model_name = "google/gemma-3-12b-it"
+    llm = LLM(
+        model=model_name,
+        max_model_len=8192,
+        max_num_seqs=2,
+        limit_mm_per_prompt={"image": chunk_size},
+    )
+    processor = AutoProcessor.from_pretrained(model_name)
+
+    def build(question: str, images: list):
+        content = [{"type": "image", "image": img} for img in images]
+        content.append({"type": "text", "text": question})
+        messages = [{"role": "user", "content": content}]
+        prompt = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        return prompt, images, [1, 106]
+
+    return VLMModel(key="gemma3_12b", label="Gemma-3-12B-IT", llm=llm, build_fn=build)
+
+
 # ── Model registry ────────────────────────────────────────────────────────────
 
 MODEL_REGISTRY: dict[str, dict] = {
@@ -800,6 +826,7 @@ MODEL_REGISTRY: dict[str, dict] = {
     "step3_vl":     {"loader": load_step3_vl,     "label": "STEP3-VL-10B"},
     "minicpm_v45":  {"loader": load_minicpm_v45,  "label": "MiniCPM-V-4.5"},
     "gemma3":       {"loader": load_gemma3,        "label": "Gemma-3-4B-IT"},
+    "gemma3_12b":   {"loader": load_gemma3_12b,    "label": "Gemma-3-12B-IT"},
     "phi4_vision":  {"loader": load_phi4_vision,   "label": "Phi-4-Reasoning-Vision-15B"},
     "cosmos_reason2_2b": {"loader": load_cosmos_reason2_2b, "label": "Cosmos-Reason2-2B"},
     "cosmos_reason2_8b": {"loader": load_cosmos_reason2_8b, "label": "Cosmos-Reason2-8B"},
