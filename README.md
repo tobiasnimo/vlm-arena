@@ -300,3 +300,13 @@ Set `MOCK_INFERENCE=true` in `.env`. Models will not be loaded; a placeholder an
    ```
 
 > **Note:** If you also see the error during vLLM's vision encoder profiling pass (before inference starts), comment out `enforce_eager=True` from the relevant loader in `inference.py` — it can conflict with certain model architectures.
+
+**Disk full on SageMaker**
+→ HuggingFace model downloads can fill up the root volume. Clear the cache and check disk usage:
+
+```bash
+rm -rf ~/.cache/huggingface
+df -h
+```
+
+> **Tip:** Set `HF_HOME` in `.env` to point to a larger volume (e.g. an attached EFS or EBS mount) so the cache doesn't fill the root disk.
