@@ -189,10 +189,10 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
 |------------------|---------------------------|--------------|--------|
 | `phi3_v`         | Phi-3.5-vision-instruct   | vLLM         | ~10 GB |
 | `qwen2_vl`       | Qwen2-VL-7B-Instruct      | vLLM         | ~18 GB |
-| `qwen35_vl`      | Qwen3.5-0.8B              | vLLM         | ~2 GB  |
-| `qwen35_vl_2b`   | Qwen3.5-2B                | vLLM         | ~4 GB  |
-| `qwen35_vl_4b`   | Qwen3.5-4B                | vLLM         | ~8 GB  |
-| `qwen35_vl_9b`   | Qwen3.5-9B                | vLLM         | ~20 GB |
+| `qwen35_vl`      | Qwen3.5-0.8B              | Transformers | ~2 GB  |
+| `qwen35_vl_2b`   | Qwen3.5-2B                | Transformers | ~4 GB  |
+| `qwen35_vl_4b`   | Qwen3.5-4B                | Transformers | ~8 GB  |
+| `qwen35_vl_9b`   | Qwen3.5-9B                | Transformers | ~20 GB |
 | `minicpm_v4`     | MiniCPM-V-4               | vLLM         | ~10 GB |
 | `minicpm_v45`    | MiniCPM-V-4.5             | Transformers | ~20 GB |
 | `llava_next`     | LLaVA-v1.6-Mistral-7B    | vLLM         | ~16 GB |

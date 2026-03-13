@@ -219,124 +219,63 @@ def load_internvl2(chunk_size: int) -> VLMModel:
     return VLMModel(key="internvl2", label="InternVL2-8B", llm=llm, build_fn=build)
 
 
-def load_qwen35_vl(chunk_size: int) -> VLMModel:
-    """Qwen3.5-0.8B — lightweight multimodal model, same vision pipeline as Qwen2-VL."""
-    from vllm import LLM
-    from transformers import AutoProcessor
+def _load_qwen35_vl(model_name: str, key: str, label: str) -> TransformersVLMModel:
+    """Shared loader for Qwen3.5-VL variants (0.8B, 2B, 4B, 9B).
 
-    try:
-        from qwen_vl_utils import process_vision_info
-    except ImportError:
-        raise ImportError("Run: pip install qwen-vl-utils")
+    Switched from vLLM to Transformers because vLLM doesn't support the
+    Qwen3_5ForConditionalGeneration architecture yet.
+    """
+    import torch
+    from transformers import AutoModelForCausalLM, AutoProcessor
 
-    model_name = "Qwen/Qwen3.5-0.8B"
-    llm = LLM(
-        model=model_name,
-        max_model_len=8192,
-        max_num_seqs=2,
-        limit_mm_per_prompt={"image": chunk_size},
-        enforce_eager=True,
-    )
     processor = AutoProcessor.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    ).eval()
 
-    def build(question: str, images: list):
-        placeholders = [{"type": "image", "image": img} for img in images]
-        messages = [{"role": "user", "content": [*placeholders, {"type": "text", "text": question}]}]
-        prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        image_data, _ = process_vision_info(messages)
-        return prompt, image_data, None
+    def run_fn(question: str, images: list, max_tokens: int, temperature: float) -> str:
+        content = [{"type": "image"} for _ in images]
+        content.append({"type": "text", "text": question})
+        messages = [{"role": "user", "content": content}]
+        text = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs = processor(
+            text=text, images=images if images else None, padding=True, return_tensors="pt",
+        ).to(model.device)
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+            )
+        generated = output_ids[:, inputs["input_ids"].shape[1]:]
+        return processor.decode(generated[0], skip_special_tokens=True).strip()
 
-    return VLMModel(key="qwen35_vl", label="Qwen3.5-0.8B", llm=llm, build_fn=build)
-
-
-def load_qwen35_vl_2b(chunk_size: int) -> VLMModel:
-    """Qwen3.5-2B — same pipeline as Qwen3.5-0.8B, larger capacity."""
-    from vllm import LLM
-    from transformers import AutoProcessor
-
-    try:
-        from qwen_vl_utils import process_vision_info
-    except ImportError:
-        raise ImportError("Run: pip install qwen-vl-utils")
-
-    model_name = "Qwen/Qwen3.5-2B"
-    llm = LLM(
-        model=model_name,
-        max_model_len=8192,
-        max_num_seqs=2,
-        limit_mm_per_prompt={"image": chunk_size},
-        enforce_eager=True,
-    )
-    processor = AutoProcessor.from_pretrained(model_name)
-
-    def build(question: str, images: list):
-        placeholders = [{"type": "image", "image": img} for img in images]
-        messages = [{"role": "user", "content": [*placeholders, {"type": "text", "text": question}]}]
-        prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        image_data, _ = process_vision_info(messages)
-        return prompt, image_data, None
-
-    return VLMModel(key="qwen35_vl_2b", label="Qwen3.5-2B", llm=llm, build_fn=build)
+    return TransformersVLMModel(key=key, label=label, run_fn=run_fn)
 
 
-def load_qwen35_vl_4b(chunk_size: int) -> VLMModel:
-    """Qwen3.5-4B — same pipeline as Qwen3.5-0.8B, larger capacity."""
-    from vllm import LLM
-    from transformers import AutoProcessor
-
-    try:
-        from qwen_vl_utils import process_vision_info
-    except ImportError:
-        raise ImportError("Run: pip install qwen-vl-utils")
-
-    model_name = "Qwen/Qwen3.5-4B"
-    llm = LLM(
-        model=model_name,
-        max_model_len=8192,
-        max_num_seqs=2,
-        limit_mm_per_prompt={"image": chunk_size},
-        enforce_eager=True,
-    )
-    processor = AutoProcessor.from_pretrained(model_name)
-
-    def build(question: str, images: list):
-        placeholders = [{"type": "image", "image": img} for img in images]
-        messages = [{"role": "user", "content": [*placeholders, {"type": "text", "text": question}]}]
-        prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        image_data, _ = process_vision_info(messages)
-        return prompt, image_data, None
-
-    return VLMModel(key="qwen35_vl_4b", label="Qwen3.5-4B", llm=llm, build_fn=build)
+def load_qwen35_vl(chunk_size: int) -> TransformersVLMModel:
+    """Qwen3.5-0.8B — lightweight multimodal model (~2 GB VRAM)."""
+    return _load_qwen35_vl("Qwen/Qwen3.5-0.8B", "qwen35_vl", "Qwen3.5-0.8B")
 
 
-def load_qwen35_vl_9b(chunk_size: int) -> VLMModel:
-    """Qwen3.5-9B — same pipeline as Qwen3.5-0.8B, larger capacity."""
-    from vllm import LLM
-    from transformers import AutoProcessor
+def load_qwen35_vl_2b(chunk_size: int) -> TransformersVLMModel:
+    """Qwen3.5-2B (~4 GB VRAM)."""
+    return _load_qwen35_vl("Qwen/Qwen3.5-2B", "qwen35_vl_2b", "Qwen3.5-2B")
 
-    try:
-        from qwen_vl_utils import process_vision_info
-    except ImportError:
-        raise ImportError("Run: pip install qwen-vl-utils")
 
-    model_name = "Qwen/Qwen3.5-9B"
-    llm = LLM(
-        model=model_name,
-        max_model_len=8192,
-        max_num_seqs=2,
-        limit_mm_per_prompt={"image": chunk_size},
-        enforce_eager=True,
-    )
-    processor = AutoProcessor.from_pretrained(model_name)
+def load_qwen35_vl_4b(chunk_size: int) -> TransformersVLMModel:
+    """Qwen3.5-4B (~8 GB VRAM)."""
+    return _load_qwen35_vl("Qwen/Qwen3.5-4B", "qwen35_vl_4b", "Qwen3.5-4B")
 
-    def build(question: str, images: list):
-        placeholders = [{"type": "image", "image": img} for img in images]
-        messages = [{"role": "user", "content": [*placeholders, {"type": "text", "text": question}]}]
-        prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        image_data, _ = process_vision_info(messages)
-        return image_data, None
 
-    return VLMModel(key="qwen35_vl_9b", label="Qwen3.5-9B", llm=llm, build_fn=build)
+def load_qwen35_vl_9b(chunk_size: int) -> TransformersVLMModel:
+    """Qwen3.5-9B (~20 GB VRAM)."""
+    return _load_qwen35_vl("Qwen/Qwen3.5-9B", "qwen35_vl_9b", "Qwen3.5-9B")
 
 
 def load_minicpm_v4(chunk_size: int) -> VLMModel:
