@@ -12,7 +12,6 @@ class Settings(BaseSettings):
 
     # API keys
     hf_token: str = ""
-    groq_api_key: str = ""
 
     # Frame extraction
     fps: int = 1
@@ -46,7 +45,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 os.environ["HF_TOKEN"] = settings.hf_token
-os.environ["GROQ_API_KEY"] = settings.groq_api_key
 os.environ["HF_HUB_DISABLE_XET"] = "1"  # disable xet transfer protocol (unstable on some instances)
 if settings.hf_home:
     os.environ["HF_HOME"] = settings.hf_home

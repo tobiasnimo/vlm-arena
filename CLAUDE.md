@@ -10,7 +10,7 @@ Benchmarks Vision Language Models (VLMs) on video understanding tasks.
 Given a video and a set of annotated events (each with a timeframe), it:
 1. Extracts frames from the video at a configurable FPS.
 2. Groups frames into overlapping chunks and runs each VLM on every chunk → **Story**.
-3. For each annotated event, judges the stories that overlap its timeframe via a Groq LLM → **Judgement**.
+3. For each annotated event, judges the stories that overlap its timeframe via fair-forge `VisionSimilarity` (cosine similarity) → **Judgement**.
 4. Writes one output file per video-model pair and a global leaderboard.
 
 ---
@@ -23,8 +23,10 @@ Given a video and a set of annotated events (each with a timeframe), it:
 | `src/schemas.py` | All Pydantic models: `Timeframe`, `Event`, `Story`, `Judgement`, `VideoResult`. |
 | `src/config.py` | `pydantic-settings` config loaded from `config.txt`. |
 | `src/utils/inference.py` | `VLMModel` (load-once), `MockVLMModel`, `load_model()` factory, model loaders. |
-| `src/utils/judge.py` | `judge_event(event, stories) → Judgement` via Groq. |
+| `src/utils/judge.py` | `judge_event(event, stories) → Judgement` via fair-forge VisionSimilarity. |
 | `src/utils/preprocessing.py` | `extract_frames()`, `parse_frame_timestamp()`, `make_chunks()`. |
+| `bridge/batch_builder.py` | Builds fair-forge `Batch` objects from events + overlapping stories. |
+| `bridge/retriever.py` | No-op `Retriever` subclass required by fair-forge. |
 
 ---
 
@@ -42,7 +44,7 @@ Pipeline per video × model:
 frames = extract_frames(video, fps)
 chunks = make_chunks(frames, CHUNK_SIZE, CHUNK_OVERLAP)   # frame-count-based overlap
 stories = [model.run(chunk) for chunk in chunks]          # VLM inference
-judgements = [judge_event(event, stories) for event in events]  # LLM judge, per-event overlap
+judgements = [judge_event(event, stories) for event in events]  # cosine similarity judge, per-event overlap
 ```
 
 Output:
@@ -71,7 +73,6 @@ VideoResult(video_id, model_key, model_label, video_duration, fps,
 | Key | Default | Description |
 |-----|---------|-------------|
 | `HF_TOKEN` | — | Hugging Face token (required for Phi-3.5, InternVL2) |
-| `GROQ_API_KEY` | — | Groq API key (required for the judge) |
 | `FPS` | 1 | Frames per second to extract |
 | `CHUNK_SIZE` | 5 | Frames per VLM inference chunk |
 | `CHUNK_OVERLAP` | 0 | Overlapping frames between chunks (must be < CHUNK_SIZE) |

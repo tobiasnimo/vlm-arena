@@ -1,6 +1,6 @@
 # VLM Arena
 
-Evaluate multiple Vision Language Models (VLMs) on video understanding tasks. The pipeline extracts frames from videos, runs them through several VLMs, and uses an LLM-as-a-judge to score each model's descriptions against per-event ground-truth annotations.
+Evaluate multiple Vision Language Models (VLMs) on video understanding tasks. The pipeline extracts frames from videos, runs them through several VLMs, and uses [fair-forge](https://pypi.org/project/alquimia-fair-forge/) vision similarity to score each model's descriptions against per-event ground-truth annotations.
 
 
 ## How it works
@@ -14,7 +14,7 @@ dataset/<video-id>/
 
 1. **Frame extraction** — splits each video into JPG frames at the configured FPS
 2. **Chunked inference** — groups frames into overlapping chunks and runs each VLM on every chunk → one **Story** per chunk
-3. **Per-event judging** — for each annotated event, the judge collects all stories whose timeframe overlaps the event's timeframe and asks a Groq-hosted LLM to score them → one **Judgement** per event
+3. **Per-event judging** — for each annotated event, the judge collects all stories whose timeframe overlaps the event's timeframe and computes a cosine similarity score (via fair-forge `VisionSimilarity`) between the VLM descriptions and the ground-truth annotation → one **Judgement** per event
 4. **Results** — one JSON file per video-model pair, saved to `results/<model_key>/<video_id>.json`
 5. **Leaderboard** — aggregated average scores across all videos and events, saved to `results/leaderboard.json`
 
@@ -28,8 +28,11 @@ src/
 ├── schemas.py            # Pydantic models: Timeframe, Event, Story, Judgement, VideoResult
 └── utils/
     ├── inference.py      # VLMModel class, model loaders, MockVLMModel
-    ├── judge.py          # LLM-as-a-judge via Groq (per-event)
+    ├── judge.py          # per-event scoring via fair-forge VisionSimilarity
     └── preprocessing.py  # frame extraction, timestamp parsing, chunking
+bridge/
+├── batch_builder.py      # builds fair-forge Batch objects from events + stories
+└── retriever.py          # no-op Retriever for fair-forge integration
 dataset/                  # default location for video folders (configurable via VIDEOS_DIR)
 results/                  # output JSON files (created automatically)
 config.txt                # configuration (see below)
@@ -63,7 +66,6 @@ Create `.env` in the project root (see `example.env` for all options):
 
 ```ini
 HF_TOKEN=hf_your_token_here
-GROQ_API_KEY=gsk_your_key_here
 
 FPS=1
 CHUNK_SIZE=5
@@ -158,7 +160,7 @@ A JSON array of event objects. Each event has an `event_id`, a `description`, an
       "event_timeframe": { "start": "00:00:00", "end": "00:00:08" },
       "story_ids": ["story_000", "story_001"],
       "score": 0.82,
-      "analysis": "The model correctly identified the entry but missed ..."
+      "analysis": "Cosine similarity between VLM description and ground truth: 0.8200"
     }
   ]
 }
