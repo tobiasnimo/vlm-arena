@@ -13,7 +13,8 @@ tqdm
 pydantic-settings>=2.0.0
 
 # Judge
-langchain-groq
+alquimia-fair-forge[vision]==3.0.0b2
+sentence-transformers
 
 # Model-specific extras
 qwen-vl-utils           # required for Qwen

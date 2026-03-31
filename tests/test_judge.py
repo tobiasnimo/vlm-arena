@@ -1,23 +1,22 @@
-import pytest
+"""Tests for utils.judge — fair-forge VisionSimilarity scoring."""
+
 from unittest.mock import MagicMock, patch
 
-from schemas import Event, Judgement, Story, Timeframe
+from schemas import Judgement, Story, Timeframe
 from utils.judge import judge_event
-
-
-def _mock_groq_response(content: str):
-    response = MagicMock()
-    response.content = content
-    return response
 
 
 # ── judge_event — happy path ──────────────────────────────────────────────────
 
 class TestJudgeEvent:
     def test_returns_judgement_with_score(self, sample_event, sample_stories):
-        groq_json = '{"score": 0.75, "analysis": "Detected entry, missed details."}'
-        with patch("utils.judge.ChatGroq") as MockGroq:
-            MockGroq.return_value.invoke.return_value = _mock_groq_response(groq_json)
+        with patch("utils.judge.VisionSimilarity") as MockVS:
+            instance = MockVS.return_value
+            instance._session_data = {
+                sample_event.event_id: {
+                    "interactions": [{"qa_id": sample_event.event_id, "similarity_score": 0.75}]
+                }
+            }
             result = judge_event(sample_event, sample_stories)
 
         assert isinstance(result, Judgement)
@@ -28,9 +27,13 @@ class TestJudgeEvent:
     def test_overlapping_stories_included(self, sample_event, sample_stories):
         """story_000 (00:00:00–00:00:04) and story_001 (00:00:05–00:00:09)
         both overlap event (00:00:03–00:00:12); story_002 (00:00:20–00:00:24) does not."""
-        groq_json = '{"score": 0.6, "analysis": "Partial."}'
-        with patch("utils.judge.ChatGroq") as MockGroq:
-            MockGroq.return_value.invoke.return_value = _mock_groq_response(groq_json)
+        with patch("utils.judge.VisionSimilarity") as MockVS:
+            instance = MockVS.return_value
+            instance._session_data = {
+                sample_event.event_id: {
+                    "interactions": [{"qa_id": sample_event.event_id, "similarity_score": 0.6}]
+                }
+            }
             result = judge_event(sample_event, sample_stories)
 
         assert "story_000" in result.story_ids
@@ -38,20 +41,28 @@ class TestJudgeEvent:
         assert "story_002" not in result.story_ids
 
     def test_event_timeframe_preserved(self, sample_event, sample_stories):
-        groq_json = '{"score": 0.5, "analysis": "OK."}'
-        with patch("utils.judge.ChatGroq") as MockGroq:
-            MockGroq.return_value.invoke.return_value = _mock_groq_response(groq_json)
+        with patch("utils.judge.VisionSimilarity") as MockVS:
+            instance = MockVS.return_value
+            instance._session_data = {
+                sample_event.event_id: {
+                    "interactions": [{"qa_id": sample_event.event_id, "similarity_score": 0.5}]
+                }
+            }
             result = judge_event(sample_event, sample_stories)
 
         assert result.event_timeframe.start == sample_event.timeframe.start
         assert result.event_timeframe.end == sample_event.timeframe.end
 
-    def test_groq_called_once(self, sample_event, sample_stories):
-        groq_json = '{"score": 0.8, "analysis": "Good."}'
-        with patch("utils.judge.ChatGroq") as MockGroq:
-            MockGroq.return_value.invoke.return_value = _mock_groq_response(groq_json)
+    def test_vision_similarity_batch_called_once(self, sample_event, sample_stories):
+        with patch("utils.judge.VisionSimilarity") as MockVS:
+            instance = MockVS.return_value
+            instance._session_data = {
+                sample_event.event_id: {
+                    "interactions": [{"qa_id": sample_event.event_id, "similarity_score": 0.8}]
+                }
+            }
             judge_event(sample_event, sample_stories)
-            MockGroq.return_value.invoke.assert_called_once()
+            instance.batch.assert_called_once()
 
 
 # ── judge_event — no overlapping stories ─────────────────────────────────────
@@ -68,42 +79,18 @@ class TestJudgeEventNoOverlap:
                 elapsed_seconds=1.0,
             )
         ]
-        with patch("utils.judge.ChatGroq") as MockGroq:
+        with patch("utils.judge.VisionSimilarity") as MockVS:
             result = judge_event(sample_event, far_stories)
-            MockGroq.return_value.invoke.assert_not_called()
+            MockVS.return_value.batch.assert_not_called()
 
         assert result.score is None
         assert result.story_ids == []
         assert "No" in result.analysis
 
     def test_empty_stories_list(self, sample_event):
-        with patch("utils.judge.ChatGroq") as MockGroq:
+        with patch("utils.judge.VisionSimilarity") as MockVS:
             result = judge_event(sample_event, [])
-            MockGroq.return_value.invoke.assert_not_called()
+            MockVS.return_value.batch.assert_not_called()
 
         assert result.score is None
         assert result.story_ids == []
-
-
-# ── judge_event — malformed LLM response ─────────────────────────────────────
-
-class TestJudgeEventBadResponse:
-    def test_non_json_response_score_is_none(self, sample_event, sample_stories):
-        with patch("utils.judge.ChatGroq") as MockGroq:
-            MockGroq.return_value.invoke.return_value = _mock_groq_response(
-                "Sorry, I cannot evaluate this."
-            )
-            result = judge_event(sample_event, sample_stories)
-
-        assert result.score is None
-        assert "Sorry" in result.analysis
-
-    def test_json_missing_score_key(self, sample_event, sample_stories):
-        with patch("utils.judge.ChatGroq") as MockGroq:
-            MockGroq.return_value.invoke.return_value = _mock_groq_response(
-                '{"analysis": "Only analysis, no score."}'
-            )
-            result = judge_event(sample_event, sample_stories)
-
-        assert result.score is None
-        assert "Only analysis" in result.analysis

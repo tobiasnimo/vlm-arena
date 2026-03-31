@@ -1,42 +1,25 @@
 """
-LLM-as-a-Judge for VLM Arena.
+fair-forge Vision Similarity judge for VLM Arena.
 
 For each annotated event, the judge evaluates all stories whose timeframe
-overlaps with the event's timeframe and returns a Judgement with a 0–1 score.
+overlaps with the event's timeframe and returns a Judgement with a 0–1 score
+computed via cosine similarity between VLM descriptions and ground truth.
 """
 
-import json
 import logging
+import sys
+from pathlib import Path
 
-from langchain_groq import ChatGroq
+from fair_forge.metrics.vision import VisionSimilarity
+from fair_forge.schemas import Batch
 
-from config import settings
+# bridge/ lives one level above src/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "bridge"))
+from retriever import ArenaRetriever
+
 from schemas import Event, Judgement, Story
 
 logger = logging.getLogger(__name__)
-
-JUDGE_PROMPT = """\
-You are an objective evaluator assessing how well a Vision Language Model (VLM) described a specific event in a video.
-
-## Event to Evaluate
-Description: {event_description}
-Timeframe: {event_start} → {event_end}
-
-## VLM Descriptions
-The VLM processed the video in chunks. The following chunks overlap with the event's timeframe:
-{descriptions}
-
-## Task
-Evaluate how well the VLM descriptions captured the event described above.
-Focus only on whether the event was detected and accurately described — ignore content outside the event's scope.
-
-Respond with a JSON object (and nothing else) in this exact format:
-{{
-  "analysis": "<2-3 sentence evaluation of what was captured correctly and what was missed>",
-  "score": <float 0-1>
-}}
-
-Score guide: 0 = event completely missed, 1 = event fully and accurately captured."""
 
 
 def judge_event(event: Event, stories: list[Story]) -> Judgement:
@@ -64,31 +47,27 @@ def judge_event(event: Event, stories: list[Story]) -> Judgement:
             analysis="No VLM stories overlap with this event's timeframe.",
         )
 
-    descriptions = "\n\n".join(
-        f"[{s.story_id} | {s.timeframe.start}–{s.timeframe.end}]\n{s.answer}"
-        for s in overlapping
+    batch_item = Batch(
+        qa_id=event.event_id,
+        assistant=" ".join(s.answer for s in overlapping),
+        ground_truth_assistant=event.description,
+        query="",
     )
 
-    judge = ChatGroq(model="llama-3.1-8b-instant", api_key=settings.groq_api_key)
-
-    prompt = JUDGE_PROMPT.format(
-        event_description=event.description,
-        event_start=event.timeframe.start,
-        event_end=event.timeframe.end,
-        descriptions=descriptions,
+    vs = VisionSimilarity(ArenaRetriever)
+    session_id = event.event_id
+    vs.batch(
+        session_id=session_id,
+        context="",
+        assistant_id="vlm-arena",
+        batch=[batch_item],
     )
 
-    response = judge.invoke(prompt)
-    raw = response.content.strip()
-
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("Judge returned non-JSON response for event '%s'", event.event_id)
-        parsed = {"analysis": raw, "score": None}
-
-    score = parsed.get("score")
-    analysis = parsed.get("analysis", "")
+    interaction = vs._session_data[session_id]["interactions"][0]
+    score = interaction["similarity_score"]
+    analysis = (
+        f"Cosine similarity between VLM description and ground truth: {score:.4f}"
+    )
 
     logger.info("[%s] event '%s' → score: %s", event.event_id, event.description[:60], score)
 
